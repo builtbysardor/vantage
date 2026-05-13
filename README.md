@@ -1,162 +1,108 @@
-# 📡 InfraWatch — Linux Server Monitoring Stack
+<div align="center">
 
-> A production-ready, beginner-friendly monitoring system built with Docker, Prometheus, Node Exporter, and Grafana.  
-> Spin up a complete observability platform with **one command**.
+# 📡 InfraWatch — Production Server Monitoring Stack
+
+<p align="center">
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
+  <img src="https://img.shields.io/badge/Prometheus-Latest-E6522C?style=for-the-badge&logo=prometheus&logoColor=white" />
+  <img src="https://img.shields.io/badge/Grafana-Latest-F46800?style=for-the-badge&logo=grafana&logoColor=white" />
+  <img src="https://img.shields.io/badge/Node_Exporter-Powered-00BFFF?style=for-the-badge&logo=linux&logoColor=white" />
+  <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" />
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/github/stars/builtbysardor/infrawatch-monitoring-stack?style=flat-square" />
+  <img src="https://img.shields.io/github/forks/builtbysardor/infrawatch-monitoring-stack?style=flat-square" />
+  <img src="https://img.shields.io/badge/Setup_Time-Under_2_min-brightgreen?style=flat-square" />
+  <img src="https://img.shields.io/badge/Platform-Linux%20%7C%20macOS-lightgrey?style=flat-square" />
+</p>
+
+<br/>
+
+> **Production-ready observability platform** — Prometheus + Grafana + Node Exporter in Docker.  
+> From zero to a fully working monitoring dashboard in **one command**.
+
+<br/>
+
+```bash
+docker compose up -d
+```
+
+**[🚀 Installation](#-installation) • [📊 Dashboard](#️-opening-grafana) • [🏗 Architecture](#️-architecture) • [🔧 Troubleshooting](#-troubleshooting)**
+
+</div>
 
 ---
 
-## 📋 Table of Contents
+## 📸 Dashboard Preview
 
-- [What is InfraWatch?](#what-is-infrawatch)
-- [Architecture](#architecture)
-- [What Each Component Does](#what-each-component-does)
-- [Prerequisites](#prerequisites)
-- [Project Structure](#project-structure)
-- [Installation](#installation)
-- [How to Run](#how-to-run)
-- [Opening Grafana](#opening-grafana)
-- [Default Login Credentials](#default-login-credentials)
-- [Dashboard Panels](#dashboard-panels)
-- [Useful Commands](#useful-commands)
-- [Ports Reference](#ports-reference)
-- [Troubleshooting](#troubleshooting)
-- [Project Presentation](#project-presentation)
+<div align="center">
 
----
+| System Overview | CPU & Memory |
+|:---:|:---:|
+| ![Overview](docs/grafana-overview.png) | ![CPU](docs/grafana-cpu.png) |
+| *Full server health at a glance* | *Per-core CPU & memory trends* |
 
-## 🔍 What is InfraWatch?
+| Network Traffic | Disk I/O |
+|:---:|:---:|
+| ![Network](docs/grafana-network.png) | ![Disk](docs/grafana-disk.png) |
+| *Inbound/outbound bandwidth history* | *Read/write throughput per partition* |
 
-**InfraWatch** is a complete server monitoring solution that gives you real-time visibility into your Linux server's health. It automatically collects system metrics (CPU, RAM, disk, network, uptime) and displays them in a beautiful Grafana dashboard — all running inside Docker containers.
-
-Whether you're a beginner learning DevOps or a professional who needs a quick monitoring setup, InfraWatch gets you from zero to a fully working dashboard in under 2 minutes.
+</div>
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────────────────────────────────────┐
-│                  Linux Server (Host)            │
-│                                                 │
-│  ┌──────────────────┐                           │
-│  │  Node Exporter   │  ← Reads /proc, /sys      │
-│  │  (port 9100)     │    exposes ~1000 metrics  │
-│  └────────┬─────────┘                           │
-│           │ HTTP scrape every 15s               │
-│  ┌────────▼─────────┐                           │
-│  │   Prometheus     │  ← Stores time-series     │
-│  │   (port 9090)    │    data, runs queries      │
-│  └────────┬─────────┘                           │
-│           │ PromQL queries                      │
-│  ┌────────▼─────────┐                           │
-│  │    Grafana       │  ← Renders dashboards     │
-│  │   (port 3000)    │    in your browser         │
-│  └──────────────────┘                           │
-│                                                 │
-│  All containers run on an isolated Docker       │
-│  bridge network called "monitoring"             │
-└─────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────┐
+│                  Linux Server (Host)                    │
+│                                                         │
+│  ┌──────────────────┐                                   │
+│  │  Node Exporter   │ ← reads /proc & /sys             │
+│  │  (port 9100)     │   exposes ~1000 metrics           │
+│  └────────┬─────────┘                                   │
+│           │ HTTP scrape every 15s                       │
+│  ┌────────▼─────────┐                                   │
+│  │   Prometheus     │ ← stores time-series data        │
+│  │   (port 9090)    │   runs PromQL queries             │
+│  └────────┬─────────┘                                   │
+│           │ PromQL queries                              │
+│  ┌────────▼─────────┐                                   │
+│  │    Grafana       │ ← renders dashboards             │
+│  │   (port 3000)    │   in your browser                 │
+│  └──────────────────┘                                   │
+│                                                         │
+│  All containers on isolated Docker bridge network       │
+└─────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 🧩 What Each Component Does
+## 🧩 Stack Components
 
-### 🔵 Node Exporter
-Node Exporter is a lightweight agent that runs on your Linux server and **exposes system metrics over HTTP**. Think of it as a "sensor" attached to your server. It reads data directly from Linux kernel interfaces (`/proc`, `/sys`) and serves them in a format Prometheus can understand.
-
-**Metrics it collects:**
-- CPU usage per core and in total
-- RAM: total, used, available, cached
-- Disk: space used per partition, read/write speed
-- Network: bytes sent/received per interface
-- System load, uptime, open file descriptors, and hundreds more
-
-**Endpoint:** `http://localhost:9100/metrics`
-
----
-
-### 🟠 Prometheus
-Prometheus is a **time-series database and monitoring system**. It regularly visits ("scrapes") Node Exporter's HTTP endpoint, reads all the metrics, timestamps them, and stores them efficiently on disk.
-
-Prometheus uses its own query language called **PromQL** which lets you ask questions like:
-- "What was the average CPU usage over the last 5 minutes?"
-- "How much disk space is left on the root partition?"
-
-Grafana uses PromQL queries to pull the data it needs for charts.
-
-**Web UI:** `http://localhost:9090` — you can write PromQL queries directly here.
-
----
-
-### 🟢 Grafana
-Grafana is the **visualization layer**. It connects to Prometheus as a data source and uses PromQL queries to draw charts, graphs, and stat panels in a browser-based dashboard.
-
-InfraWatch pre-configures both the Prometheus data source and the Linux monitoring dashboard automatically, so you don't need to click through any setup screens.
-
-**Dashboard UI:** `http://localhost:3000`
-
----
-
-### 🐳 Docker Compose
-Docker Compose is the **orchestration tool** that reads `docker-compose.yml` and manages all three containers as a single application. It handles:
-- Starting and stopping all services together
-- Networking (all containers share a private bridge network)
-- Volume persistence (data survives restarts)
-- Environment variables and port mapping
+| Component | Port | Role |
+|-----------|------|------|
+| 🔵 **Node Exporter** | 9100 | Reads Linux `/proc` & `/sys` — exposes ~1000 system metrics |
+| 🟠 **Prometheus** | 9090 | Scrapes metrics every 15s, stores time-series, runs PromQL |
+| 🟢 **Grafana** | 3000 | Queries Prometheus via PromQL, renders beautiful dashboards |
+| 🐳 **Docker Compose** | — | Orchestrates all 3 containers on an isolated bridge network |
 
 ---
 
 ## ✅ Prerequisites
 
-Make sure the following are installed on your Linux/Ubuntu machine:
+| Tool | Min Version | Check |
+|------|------------|-------|
+| Docker | 20.x | `docker --version` |
+| Docker Compose | v2 | `docker compose version` |
 
-| Tool | Minimum Version | Check |
-|------|----------------|-------|
-| Docker | 20.x or newer | `docker --version` |
-| Docker Compose | v2 (plugin) | `docker compose version` |
-
-### Install Docker on Ubuntu (if not already installed):
+### Install Docker on Ubuntu
 
 ```bash
-# Update package index
 sudo apt-get update
-
-# Install Docker
 sudo apt-get install -y docker.io docker-compose-plugin
-
-# Add your user to the docker group (avoids needing sudo)
-sudo usermod -aG docker $USER
-
-# Apply the group change (or log out and back in)
-newgrp docker
-
-# Verify
-docker --version
-docker compose version
-```
-
----
-
-## 📁 Project Structure
-
-```
-infrawatch/
-├── docker-compose.yml                          # Defines all 3 services
-│
-├── prometheus/
-│   └── prometheus.yml                          # Scrape targets config
-│
-├── grafana/
-│   ├── provisioning/
-│   │   ├── datasources/
-│   │   │   └── prometheus.yml                 # Auto-registers Prometheus
-│   │   └── dashboards/
-│   │       └── default.yml                    # Tells Grafana where dashboards are
-│   └── dashboards/
-│       └── linux-overview.json                # The pre-built dashboard
-│
-└── README.md                                   # This file
+sudo usermod -aG docker $USER && newgrp docker
 ```
 
 ---
@@ -164,110 +110,80 @@ infrawatch/
 ## 📦 Installation
 
 ```bash
-# 1. Clone or download this project
-git clone https://github.com/your-username/infrawatch.git
-# — OR — simply copy the folder to your server
+# 1. Clone the repository
+git clone https://github.com/builtbysardor/infrawatch-monitoring-stack.git
+cd infrawatch-monitoring-stack
 
-# 2. Enter the project directory
-cd infrawatch
-```
-
-That's it. No additional installation steps needed — Docker handles everything else.
-
----
-
-## ▶️ How to Run
-
-### Start all services (detached/background mode):
-
-```bash
+# 2. Start all services
 docker compose up -d
-```
 
-Docker will:
-1. Pull the latest images for Prometheus, Node Exporter, and Grafana
-2. Create the isolated `monitoring` network
-3. Start all 3 containers
-
-### Verify all containers are running:
-
-```bash
+# 3. Verify containers are running
 docker compose ps
 ```
 
 Expected output:
 ```
-NAME                          STATUS          PORTS
-infrawatch_grafana            Up              0.0.0.0:3000->3000/tcp
-infrawatch_node_exporter      Up              0.0.0.0:9100->9100/tcp
-infrawatch_prometheus         Up              0.0.0.0:9090->9090/tcp
-```
-
-### View live logs:
-
-```bash
-docker compose logs -f
-```
-
-### Stop all services:
-
-```bash
-docker compose down
-```
-
-### Stop and delete all data (volumes):
-
-```bash
-docker compose down -v
+NAME                      STATUS    PORTS
+infrawatch_grafana        Up        0.0.0.0:3000->3000/tcp
+infrawatch_node_exporter  Up        0.0.0.0:9100->9100/tcp
+infrawatch_prometheus     Up        0.0.0.0:9090->9090/tcp
 ```
 
 ---
 
 ## 🖥️ Opening Grafana
 
-1. Open your browser and go to:
-   ```
-   http://localhost:3000
-   ```
-   *(If accessing a remote server, replace `localhost` with your server's IP address)*
-
-2. Log in with the default credentials (see below)
-
-3. The **InfraWatch — Linux Server Overview** dashboard loads automatically under:
-   **Dashboards → InfraWatch → InfraWatch — Linux Server Overview**
-
----
-
-## 🔐 Default Login Credentials
+1. Open your browser: **http://localhost:3000**
+2. Login with default credentials:
 
 | Field | Value |
 |-------|-------|
 | Username | `admin` |
 | Password | `infrawatch` |
 
-> ⚠️ **Security note:** Change the default password immediately on any internet-facing server.  
-> You can do this in Grafana: **Profile → Change Password**, or by updating the `GF_SECURITY_ADMIN_PASSWORD` environment variable in `docker-compose.yml`.
+> ⚠️ Change the default password on any internet-facing server!
+
+3. Navigate to **Dashboards → InfraWatch → Linux Server Overview**
+
+The dashboard is pre-provisioned and loads automatically. No manual setup needed. ✅
 
 ---
 
 ## 📊 Dashboard Panels
 
-The pre-built dashboard includes the following panels:
-
 | Panel | Type | Description |
 |-------|------|-------------|
-| 🖥️ System Uptime | Stat | How long the server has been running |
-| ⚡ CPU Usage % | Stat + Graph | Current CPU load with color thresholds |
-| 🧠 RAM Usage % | Stat + Graph | Memory utilization percentage |
+| 🖥️ System Uptime | Stat | Server uptime duration |
+| ⚡ CPU Usage % | Stat + Graph | Load with color thresholds |
+| 🧠 RAM Usage % | Stat + Graph | Memory utilization |
 | 💾 Disk Usage % | Stat | Root partition usage |
-| 🌐 Network In | Stat | Inbound bytes per second |
-| 📤 Network Out | Stat | Outbound bytes per second |
-| ⚡ CPU Over Time | Time Series | Per-core CPU usage history |
-| 🧠 RAM Over Time | Time Series | Used / Available / Total RAM over time |
-| 🌐 Network Traffic | Time Series | Inbound and outbound traffic history |
-| 💾 Disk by Partition | Bar Gauge | Usage % for all mounted filesystems |
-| 📊 Disk I/O | Time Series | Read and write throughput |
-| 🔧 Load Average | Time Series | System load at 1m, 5m, 15m intervals |
+| 🌐 Network In/Out | Stat | Inbound/outbound bytes/sec |
+| ⚡ CPU Over Time | Time Series | Per-core CPU history |
+| 🧠 RAM Over Time | Time Series | Used/Available/Total history |
+| 🌐 Network Traffic | Time Series | Bandwidth history |
+| 💾 Disk by Partition | Bar Gauge | Usage % per filesystem |
+| 📊 Disk I/O | Time Series | Read/write throughput |
+| 🔧 Load Average | Time Series | 1m / 5m / 15m load |
+
+---
+
+## 📁 Project Structure
+
+```
+infrawatch-monitoring-stack/
+├── docker-compose.yml                         # All 3 services defined here
+├── prometheus/
+│   └── prometheus.yml                         # Scrape targets config
+├── grafana/
+│   ├── provisioning/
+│   │   ├── datasources/
+│   │   │   └── prometheus.yml                # Auto-registers Prometheus
+│   │   └── dashboards/
+│   │       └── default.yml                   # Dashboard discovery config
+│   └── dashboards/
+│       └── linux-overview.json               # Pre-built Grafana dashboard
+└── README.md
+```
 
 ---
 
@@ -280,97 +196,71 @@ docker compose up -d
 # Stop the stack
 docker compose down
 
-# Restart a single service (e.g. after config changes)
+# View live logs
+docker compose logs -f
+
+# Restart a single service
 docker compose restart prometheus
 
-# View logs for a specific service
-docker compose logs -f grafana
-docker compose logs -f prometheus
-docker compose logs -f node_exporter
-
-# Check container resource usage
-docker stats
-
-# Reload Prometheus config without restarting
-curl -X POST http://localhost:9090/-/reload
-
-# Check Node Exporter raw metrics
+# Check raw Node Exporter metrics
 curl http://localhost:9100/metrics | head -50
 
-# Check Prometheus targets (are they UP?)
-# Open in browser: http://localhost:9090/targets
+# Reload Prometheus config (no restart needed)
+curl -X POST http://localhost:9090/-/reload
 ```
 
 ---
 
 ## 🔌 Ports Reference
 
-| Service | Port | URL | Purpose |
-|---------|------|-----|---------|
-| Grafana | 3000 | http://localhost:3000 | Dashboard UI |
-| Prometheus | 9090 | http://localhost:9090 | Metrics DB + Query UI |
-| Node Exporter | 9100 | http://localhost:9100/metrics | Raw metrics endpoint |
+| Service | Port | URL |
+|---------|------|-----|
+| Grafana | 3000 | http://localhost:3000 |
+| Prometheus | 9090 | http://localhost:9090 |
+| Node Exporter | 9100 | http://localhost:9100/metrics |
 
 ---
 
 ## 🔧 Troubleshooting
 
-### Grafana shows "No data" on the dashboard
-- Wait 1–2 minutes after startup for the first metrics to be scraped
-- Visit http://localhost:9090/targets and check that `node_exporter` shows **UP**
-- If it shows DOWN, run: `docker compose logs node_exporter`
+**"No data" in Grafana?**
+- Wait 1–2 min for first metrics scrape
+- Check http://localhost:9090/targets — `node_exporter` should show **UP**
 
-### Cannot access Grafana on a remote server
-- Make sure port 3000 is open in your firewall:
-  ```bash
-  sudo ufw allow 3000/tcp
-  ```
-
-### Metrics show host system as Docker container
-- This is expected. Node Exporter mounts `/proc` and `/sys` from the host,  
-  so metrics always reflect the physical/VM host, not the container itself.
-
-### Containers keep restarting
+**Can't access on remote server?**
 ```bash
-# Check which container is failing
-docker compose ps
-
-# Inspect its logs
-docker compose logs <service-name>
+sudo ufw allow 3000/tcp
 ```
 
-### "Permission denied" errors
+**Permission denied?**
 ```bash
-# Make sure your user is in the docker group
 sudo usermod -aG docker $USER && newgrp docker
 ```
 
 ---
 
-## 📈 Extending InfraWatch
+## ➕ Extending InfraWatch
 
-Want to monitor more services? You can easily add more scrape targets to `prometheus/prometheus.yml`:
+Add more exporters to `prometheus/prometheus.yml`:
 
 ```yaml
-# Example: add a MySQL exporter
 - job_name: "mysql"
   static_configs:
     - targets: ["mysql_exporter:9104"]
 ```
 
-Popular exporters to add:
-- **mysql_exporter** — MySQL / MariaDB metrics
-- **redis_exporter** — Redis metrics
-- **nginx-prometheus-exporter** — NGINX metrics
-- **blackbox_exporter** — HTTP/TCP endpoint uptime checks
+Popular exporters: `mysql_exporter` · `redis_exporter` · `nginx-prometheus-exporter` · `blackbox_exporter`
 
 ---
 
-## 📊 Project Presentation
+## 🔮 Roadmap
 
-📊 Full DevOps presentation:
-
-[Open InfraWatch Presentation](presentation/infrawatch-presentation.pdf)
+- [ ] 📧 **Email alerts** — Grafana alerting via SMTP
+- [ ] 💬 **Telegram alerts** — webhook-based notifications
+- [ ] ☸️ **Kubernetes support** — kube-state-metrics integration
+- [ ] 🔐 **HTTPS** — TLS via reverse proxy (Traefik/NGINX)
+- [ ] 📦 **More exporters** — MySQL, Redis, NGINX dashboards
+- [ ] 📄 **Automated reports** — weekly PDF server health report
 
 ---
 
@@ -380,4 +270,12 @@ MIT License — free to use, modify, and distribute.
 
 ---
 
-*Built with Sardor by the InfraWatch project.*
+<div align="center">
+
+**Built with ❤️ by [Sardor Buriyev](https://github.com/builtbysardor)**
+
+*Docker · Prometheus · Grafana · Node Exporter*
+
+⭐ **Star this repo if InfraWatch simplified your monitoring!**
+
+</div>

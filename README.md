@@ -3,13 +3,17 @@
 > A production-grade observability platform built one component at a time over 180 days.
 > Real DevOps engineering: metrics, logs, alerting, WebSockets, task queues, RBAC, and ML anomaly detection — all in Docker.
 
-![Progress](https://img.shields.io/badge/Progress-Day_10_of_180-blue?style=flat-square)
+![Progress](https://img.shields.io/badge/Progress-Day_150_of_180-blue?style=flat-square)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white)
 ![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=flat&logo=prometheus&logoColor=white)
 ![Grafana](https://img.shields.io/badge/Grafana-F46800?style=flat&logo=grafana&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-009688?style=flat&logo=fastapi&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat&logo=python&logoColor=white)
 ![Loki](https://img.shields.io/badge/Loki-F5A800?style=flat&logo=grafana&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat&logo=redis&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-4169E1?style=flat&logo=postgresql&logoColor=white)
+![Celery](https://img.shields.io/badge/Celery-37814A?style=flat&logo=celery&logoColor=white)
+![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=flat&logo=kubernetes&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat)
 
 ---
@@ -21,12 +25,82 @@ InfraWatch is a **live engineering portfolio** — each day, one new production-
 | Phase | Days | Theme | Status |
 |-------|------|-------|--------|
 | Core Observability | 1–10 | Prometheus, Grafana, Loki, Alertmanager, FastAPI REST API | ✅ Complete |
-| Real-time Streaming | 11–30 | WebSocket server, SSE, live metrics dashboard | 🔜 Upcoming |
-| Task Queue & Automation | 31–60 | Celery, Redis, scheduled jobs, auto-remediation | 📋 Planned |
-| Security & RBAC | 61–90 | JWT auth, role-based access control, audit logging | 📋 Planned |
-| Database & Persistence | 91–120 | PostgreSQL, Alembic migrations, historical analytics | 📋 Planned |
-| ML Anomaly Detection | 121–150 | Predictive alerting, isolation forest, trend analysis | 📋 Planned |
-| Production Hardening | 151–180 | Multi-node, Kubernetes, CI/CD pipelines | 📋 Planned |
+| Real-time Streaming | 11–30 | WebSocket server, SSE, live metrics dashboard | ✅ Complete |
+| Task Queue & Automation | 31–60 | Celery, Redis, scheduled jobs, auto-remediation | ✅ Complete |
+| Security & RBAC | 61–90 | JWT auth, role-based access control, audit logging | ✅ Complete |
+| Database & Persistence | 91–120 | PostgreSQL, SQLAlchemy, historical analytics | ✅ Complete |
+| ML Anomaly Detection | 121–150 | Predictive alerting, isolation forest, trend analysis | ⏭ Skipped |
+| Production Hardening | 151–180 | Nginx, Kubernetes, GitHub Actions CI/CD | ✅ Complete |
+
+---
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                         Nginx (Port 80)                         │
+│                    Single entry point (prod)                     │
+└────────┬────────────────────┬──────────────┬────────────────────┘
+         │                    │              │
+    ┌────▼─────┐        ┌─────▼────┐  ┌─────▼──────┐
+    │ FastAPI  │        │ Grafana  │  │ Prometheus │
+    │ :8000    │        │ :3000    │  │ :9090      │
+    │ REST API │        │ Dashbrd  │  │ Metrics DB │
+    │ WebSocket│        └──────────┘  └─────┬──────┘
+    │ JWT Auth │                            │ scrapes
+    └────┬─────┘                     ┌──────┴───────┐
+         │                           │ node_exporter│
+    ┌────▼──────┐                    │ cAdvisor     │
+    │ PostgreSQL│                    │ alertmanager │
+    │ :5432     │                    └──────────────┘
+    │ Metrics   │
+    │ Audit Log │        ┌──────────┐  ┌──────────────┐
+    └───────────┘        │  Redis   │  │Celery Worker │
+                         │ :6379    ├──│ auto-remediate│
+                         │ Broker   │  │ snapshots     │
+                         └──────────┘  └──────────────┘
+```
+
+---
+
+## What's Built
+
+### Phase 1 — Core Observability
+- **Prometheus** scrapes 1000+ Linux metrics via Node Exporter
+- **Grafana** dashboards: Linux overview + cAdvisor container metrics
+- **Loki + Promtail** log aggregation — query logs in Grafana Explore
+- **Alertmanager** alert routing with configurable rules
+- **FastAPI** REST API proxy for metrics and alerts
+
+### Phase 2 — Real-time Streaming
+- **WebSocket** endpoint (`/ws/metrics`) — pushes live data every 2 seconds
+- **SSE** endpoint (`/api/stream/metrics`) — Server-Sent Events stream
+- **Live Dashboard** (`/dashboard`) — built-in HTML dashboard, no Grafana needed
+
+### Phase 3 — Task Queue & Automation
+- **Redis** message broker for distributed task execution
+- **Celery Worker** — executes background tasks asynchronously
+- **Celery Beat** — periodic scheduler (cron-style)
+- **Auto-remediation** — detects unhealthy containers, restarts them automatically
+- Scheduled: metrics snapshot every 60s, alert history every 120s, health check every 30s
+
+### Phase 4 — Security & RBAC
+- **JWT authentication** — `POST /auth/token` returns a signed Bearer token
+- **Role-based access** — `admin` (full access) and `viewer` (read-only) roles
+- **Audit logging middleware** — every request logged to PostgreSQL with user, path, status, duration
+- Protected endpoints: analytics, history, admin audit logs
+
+### Phase 5 — Database & Persistence
+- **PostgreSQL** stores metric snapshots, alert history, and audit logs
+- **SQLAlchemy** ORM with three models: `MetricSnapshot`, `AlertHistory`, `AuditLog`
+- **Historical analytics** — `/api/history/metrics`, `/api/history/alerts`
+- **Aggregated summary** — `/api/analytics/summary` returns avg/max/min over any time window
+
+### Phase 7 — Production Hardening
+- **Nginx** reverse proxy with WebSocket upgrade and SSE buffering disabled
+- **docker-compose.prod.yml** — production overlay with resource limits and 30-day retention
+- **GitHub Actions CI/CD** — lint → import test → Docker build → push to GHCR → integration test
+- **Kubernetes manifests** — Deployments, Services, PVC, Secrets, Ingress for all services
 
 ---
 

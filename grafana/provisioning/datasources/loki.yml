@@ -1,0 +1,19 @@
+# =============================================================
+# Grafana Data Source Provisioning — Loki
+# grafana/provisioning/datasources/loki.yml
+#
+# Grafana reads this on startup and auto-registers Loki as a
+# data source. No manual UI clicks needed.
+# =============================================================
+
+apiVersion: 1
+
+datasources:
+  - name: Loki
+    type: loki
+    access: proxy
+    url: http://loki:3100
+    isDefault: false
+    editable: true
+    jsonData:
+      maxLines: 1000

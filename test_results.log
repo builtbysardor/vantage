@@ -1,0 +1,11 @@
+--- InfraWatch Functional Test Results (16 May, 2026 yil, Shanba) ---
+[PASS] http://localhost:8000/health -> 200
+[PASS] http://localhost:8000/api/metrics -> 200
+[PASS] http://localhost:8000/api/alerts -> 200
+[PASS] http://localhost:8000/api/status -> 200
+[PASS] http://localhost:8000/api/containers -> 200
+[PASS] http://localhost:8000/metrics -> 200
+[PASS] Prometheus targets -> up
+[PASS] Alertmanager health -> OK
+[PASS] Loki health -> ready
+--- End of tests ---

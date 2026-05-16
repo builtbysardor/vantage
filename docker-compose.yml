@@ -1,28 +1,33 @@
 # =============================================================
-# InfraWatch — Linux Server Monitoring Stack
+# InfraWatch — Complete Monitoring Stack
 # Docker Compose Configuration
 #
-# This file defines and connects all three monitoring services:
-#   1. node_exporter  — collects Linux system metrics
-#   2. prometheus     — stores and queries those metrics
-#   3. grafana        — visualizes metrics in dashboards
+# Services:
+#   node_exporter  — Linux host metrics (port 9100)
+#   alertmanager   — Alert routing & delivery (port 9093)
+#   prometheus     — Metrics DB + rule evaluation (port 9090)
+#   grafana        — Dashboard visualization (port 3000)
+#   loki           — Log aggregation (port 3100)
+#   promtail       — Log collector (ships to Loki)
+#   cadvisor       — Container metrics (port 8080)
+#   backend        — REST API for metrics & alerts (port 8000)
 #
-# Run everything with a single command:
+# Start everything:
 #   docker compose up -d
+#   make up          (if Make is available)
 # =============================================================
 
 version: "3.8"
 
 # ── Named volumes ─────────────────────────────────────────────
-# Docker-managed volumes keep data alive between restarts.
 volumes:
-  prometheus_data:   # stores Prometheus time-series database
-  grafana_data:      # stores Grafana dashboards, users, settings
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  promtail_data:
+  alertmanager_data:
 
 # ── Shared network ────────────────────────────────────────────
-# All containers talk to each other over this private network.
-# Services can reach each other by their service name as hostname
-# (e.g. Prometheus connects to "node_exporter:9100").
 networks:
   monitoring:
     driver: bridge
@@ -32,106 +37,225 @@ services:
 
   # ----------------------------------------------------------
   # NODE EXPORTER
-  # Runs on the host and exposes ~1 000 Linux metrics over HTTP.
-  # Prometheus scrapes this endpoint every 15 seconds.
-  # Metrics include: CPU, RAM, disk I/O, network, uptime, etc.
+  # Exposes ~1000 Linux host metrics over HTTP.
+  # Scrape endpoint: http://localhost:9100/metrics
   # ----------------------------------------------------------
   node_exporter:
     image: prom/node-exporter:latest
     container_name: infrawatch_node_exporter
     restart: unless-stopped
-
-    # Give the container read-only access to key host paths so
-    # it can report real host (not container) metrics.
     volumes:
-      - /proc:/host/proc:ro       # process & kernel info
-      - /sys:/host/sys:ro         # hardware/kernel stats
-      - /:/host/rootfs:ro         # filesystem usage
-
-    # Tell node_exporter where to find the host paths above.
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/rootfs:ro
     command:
       - "--path.procfs=/host/proc"
       - "--path.sysfs=/host/sys"
       - "--path.rootfs=/host/rootfs"
       - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
-
     ports:
-      - "9100:9100"   # Metrics endpoint: http://localhost:9100/metrics
+      - "9100:9100"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9100/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - monitoring
 
+  # ----------------------------------------------------------
+  # ALERTMANAGER
+  # Receives alerts from Prometheus, groups them, and routes
+  # them to receivers (email, Slack, webhook, etc.).
+  # Web UI: http://localhost:9093
+  # ----------------------------------------------------------
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: infrawatch_alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+      - "--web.listen-address=:9093"
+    ports:
+      - "9093:9093"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
     networks:
       - monitoring
 
   # ----------------------------------------------------------
   # PROMETHEUS
-  # Time-series database and metrics scraper.
-  # Reads prometheus/prometheus.yml to know WHAT to scrape
-  # and HOW often. Stores data in a compressed local database.
-  # Query interface: http://localhost:9090
+  # Time-series database, metrics scraper, and alert evaluator.
+  # Web UI: http://localhost:9090
   # ----------------------------------------------------------
   prometheus:
     image: prom/prometheus:latest
     container_name: infrawatch_prometheus
     restart: unless-stopped
-
     volumes:
-      # Mount our custom config (read-only — Prometheus reads it)
       - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
-      # Persist the metrics database across restarts
+      - ./prometheus/rules:/etc/prometheus/rules:ro
       - prometheus_data:/prometheus
-
     command:
       - "--config.file=/etc/prometheus/prometheus.yml"
       - "--storage.tsdb.path=/prometheus"
-      - "--storage.tsdb.retention.time=15d"   # keep 15 days of data
+      - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}"
       - "--web.console.libraries=/etc/prometheus/console_libraries"
       - "--web.console.templates=/etc/prometheus/consoles"
-      - "--web.enable-lifecycle"               # allows hot-reload of config
-
+      - "--web.enable-lifecycle"
     ports:
-      - "9090:9090"   # Web UI: http://localhost:9090
-
-    # Wait for node_exporter to be up before starting
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
     depends_on:
       - node_exporter
-
+      - alertmanager
     networks:
       - monitoring
 
   # ----------------------------------------------------------
   # GRAFANA
-  # Visualization layer. Connects to Prometheus as a data source
-  # and renders beautiful dashboards from PromQL queries.
-  # Dashboard UI: http://localhost:3000
-  # Default login: admin / infrawatch
+  # Dashboard visualization layer.
+  # Default login: admin / infrawatch (override via .env)
+  # Web UI: http://localhost:3000
   # ----------------------------------------------------------
   grafana:
     image: grafana/grafana:latest
     container_name: infrawatch_grafana
     restart: unless-stopped
-
-    # Environment variables configure Grafana on first boot.
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=infrawatch     # change in production!
-      - GF_USERS_ALLOW_SIGN_UP=false              # disable public registration
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-infrawatch}
+      - GF_USERS_ALLOW_SIGN_UP=false
       - GF_SERVER_GRAFANA_NET_URL=http://localhost:3000
-      - GF_LOG_LEVEL=warn                         # reduce log noise
-
+      - GF_LOG_LEVEL=warn
     volumes:
-      # Persist all Grafana data (dashboards, plugins, users)
       - grafana_data:/var/lib/grafana
-      # Auto-provision the Prometheus data source on startup
       - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
-      # Auto-provision the dashboard loader on startup
       - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
-      # The actual dashboard JSON file
       - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
-
     ports:
-      - "3000:3000"   # Web UI: http://localhost:3000
-
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
     depends_on:
       - prometheus
+    networks:
+      - monitoring
 
+  # ----------------------------------------------------------
+  # LOKI
+  # Log aggregation backend. Receives logs from Promtail and
+  # makes them queryable in Grafana via LogQL.
+  # API: http://localhost:3100
+  # ----------------------------------------------------------
+  loki:
+    image: grafana/loki:latest
+    container_name: infrawatch_loki
+    restart: unless-stopped
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command:
+      - "-config.file=/etc/loki/local-config.yaml"
+    ports:
+      - "3100:3100"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3100/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------
+  # PROMTAIL
+  # Log collector. Tails /var/log and Docker container logs,
+  # then ships them to Loki.
+  # ----------------------------------------------------------
+  promtail:
+    image: grafana/promtail:latest
+    container_name: infrawatch_promtail
+    restart: unless-stopped
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - promtail_data:/tmp/promtail
+    command:
+      - "-config.file=/etc/promtail/config.yml"
+    depends_on:
+      - loki
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------
+  # CADVISOR
+  # Per-container resource metrics: CPU, RAM, network, disk I/O.
+  # Prometheus scrapes this at cadvisor:8080/metrics.
+  # Web UI: http://localhost:8080
+  # ----------------------------------------------------------
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: infrawatch_cadvisor
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "8080:8080"
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------
+  # BACKEND API
+  # FastAPI service that proxies Prometheus metrics and alerts
+  # as a clean REST API.
+  # Swagger UI: http://localhost:8000/docs
+  # ----------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      network: host
+    container_name: infrawatch_backend
+    restart: unless-stopped
+    environment:
+      - PROMETHEUS_URL=http://prometheus:9090
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - prometheus
     networks:
       - monitoring

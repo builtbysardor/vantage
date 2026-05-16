@@ -1,0 +1,56 @@
+# =============================================================
+# Alertmanager Configuration — alertmanager/alertmanager.yml
+#
+# Routes and delivers alerts fired by Prometheus.
+# Web UI: http://localhost:9093
+# =============================================================
+
+global:
+  resolve_timeout: 5m
+
+# ── Routing tree ──────────────────────────────────────────────
+route:
+  receiver: "default"
+  group_by: ["alertname", "instance"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  routes:
+    - matchers:
+        - severity = "critical"
+      receiver: "critical-alerts"
+      continue: false
+
+# ── Receivers ─────────────────────────────────────────────────
+receivers:
+  - name: "default"
+    # Null receiver — alerts are logged but no notification sent.
+    # Uncomment and configure one of the blocks below to enable
+    # real notifications.
+
+    # email_configs:
+    #   - to: "your@email.com"
+    #     from: "alerts@infrawatch.local"
+    #     smarthost: "smtp.gmail.com:587"
+    #     auth_username: "your@gmail.com"
+    #     auth_password: "your-app-password"
+    #     send_resolved: true
+
+  - name: "critical-alerts"
+    # slack_configs:
+    #   - api_url: "https://hooks.slack.com/services/YOUR/WEBHOOK/URL"
+    #     channel: "#alerts"
+    #     title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+    #     send_resolved: true
+
+# ── Inhibition rules ──────────────────────────────────────────
+# Suppress warning-level alerts when a critical alert is already
+# firing for the same instance — prevents alert storms.
+inhibit_rules:
+  - source_matchers:
+      - severity = "critical"
+    target_matchers:
+      - severity = "warning"
+    equal: ["instance"]

@@ -38,6 +38,10 @@ schema_config:
         prefix: index_
         period: 24h
 
+ingester:
+  lifecycler:
+    min_ready_duration: 0s
+
 ruler:
   alertmanager_url: http://alertmanager:9093
 

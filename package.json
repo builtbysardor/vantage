@@ -1,0 +1,22 @@
+{
+  "name": "vantage",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.0.0",
+  "scripts": {
+    "dev": "concurrently \"pnpm dev:nexus\" \"pnpm dev:infrawatch\" \"pnpm dev:frontend\"",
+    "dev:frontend": "pnpm --filter frontend dev",
+    "dev:nexus": "pnpm --filter nexus-api dev",
+    "dev:infrawatch": "cd packages/infrawatch-api && uvicorn main:app --reload --port 8000",
+    "infra:up": "docker compose -f infra/docker-compose.infra.yml up -d",
+    "infra:down": "docker compose -f infra/docker-compose.infra.yml down",
+    "all:up": "docker compose up -d",
+    "all:down": "docker compose down",
+    "typecheck": "pnpm --filter frontend tsc --noEmit",
+    "lint": "pnpm --filter frontend lint",
+    "test": "pnpm --filter frontend test"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

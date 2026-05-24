@@ -1,0 +1,24 @@
+{
+  "name": "nexus-pro",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Nexus Pro — Real-time infrastructure monitoring (workspaces root)",
+  "workspaces": [
+    "backend",
+    "frontend"
+  ],
+  "scripts": {
+    "dev": "concurrently -n backend,frontend -c blue,magenta \"npm:dev:backend\" \"npm:dev:frontend\"",
+    "dev:backend": "npm --workspace backend run dev",
+    "dev:frontend": "npm --workspace frontend run dev",
+    "build": "npm --workspace frontend run build",
+    "start": "concurrently -n backend,frontend -c blue,magenta \"npm --workspace backend run start\" \"npm --workspace frontend run start\"",
+    "lint": "npm --workspace frontend run lint"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

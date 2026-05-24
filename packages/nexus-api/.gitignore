@@ -1,0 +1,16 @@
+node_modules/
+.next/
+.env
+.env.local
+.env.*.local
+dist/
+*.log
+npm-debug.log*
+.DS_Store
+*.tgz
+coverage/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

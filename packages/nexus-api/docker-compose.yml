@@ -1,0 +1,48 @@
+services:
+  backend:
+    build: ./backend
+    container_name: nexus-backend
+    ports:
+      - "3001:3001"
+    env_file:
+      - ./backend/.env
+    restart: unless-stopped
+    networks:
+      - nexus
+
+  frontend:
+    build: ./frontend
+    container_name: nexus-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      NEXT_PUBLIC_WS_URL: ws://localhost:3001
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - nexus
+
+  # ──────────────────────────────────────────────────────────
+  # No database service yet — backend keeps state in memory.
+  # When persistence is added, drop a `postgres` service here:
+  #
+  # postgres:
+  #   image: postgres:16-alpine
+  #   environment:
+  #     POSTGRES_USER: nexus
+  #     POSTGRES_PASSWORD: nexus
+  #     POSTGRES_DB: nexus
+  #   volumes:
+  #     - nexus-pgdata:/var/lib/postgresql/data
+  #   networks:
+  #     - nexus
+  #
+  # volumes:
+  #   nexus-pgdata:
+  # ──────────────────────────────────────────────────────────
+
+networks:
+  nexus:
+    driver: bridge

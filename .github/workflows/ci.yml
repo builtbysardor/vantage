@@ -1,0 +1,99 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  # ─────────────────────────────────────────────
+  # 1. Frontend — type-check, lint, build
+  # ─────────────────────────────────────────────
+  frontend-ci:
+    name: Frontend CI
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type-check
+        run: pnpm --filter frontend tsc --noEmit
+
+      - name: Lint
+        run: |
+          if pnpm --filter frontend run --if-present lint; then
+            echo "Lint passed"
+          else
+            echo "No lint script or lint failed"
+            exit $?
+          fi
+
+      - name: Build
+        run: pnpm --filter frontend build
+
+  # ─────────────────────────────────────────────
+  # 2. Nexus API — test (if script exists)
+  # ─────────────────────────────────────────────
+  nexus-test:
+    name: Nexus API Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install dependencies
+        working-directory: packages/nexus-api/backend
+        run: npm ci
+
+      - name: Run tests
+        working-directory: packages/nexus-api/backend
+        run: |
+          if node -e "const p=require('./package.json'); process.exit(p.scripts && p.scripts.test ? 0 : 1)"; then
+            npm test
+          else
+            echo "No test script found — skipping"
+          fi
+
+  # ─────────────────────────────────────────────
+  # 3. InfraWatch — ruff lint
+  # ─────────────────────────────────────────────
+  infrawatch-lint:
+    name: InfraWatch Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Ruff check
+        run: ruff check packages/infrawatch-api/

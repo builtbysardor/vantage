@@ -13,6 +13,7 @@ const hosts   = require('../services/hosts');
 const settingsStore = require('../lib/settingsStore');
 const { requireApiKey, requireAgentToken } = require('../middleware/auth');
 const requireJwt = require('../middleware/requireJwt');
+const { vantageAuth } = require('../middleware/vantage-auth');
 const { validateUser } = require('../auth/users');
 const { signToken } = require('../auth/jwt');
 const {
@@ -138,8 +139,7 @@ router.get('/health', (_req, res) => {
  *                   type: string
  *                   format: date-time
  */
-// TODO: auth on reads
-router.get('/metrics', async (_req, res) => {
+router.get('/metrics', vantageAuth, async (_req, res) => {
   try {
     const snapshot = await metrics.getFullSnapshot();
     res.json(snapshot);
@@ -173,8 +173,7 @@ router.get('/metrics', async (_req, res) => {
  *                   netOut:
  *                     type: number
  */
-// TODO: auth on reads
-router.get('/metrics/history', (_req, res) => {
+router.get('/metrics/history', vantageAuth, (_req, res) => {
   res.json(metrics.history);
 });
 
@@ -207,8 +206,7 @@ router.get('/metrics/history', (_req, res) => {
  *                 processes:
  *                   type: number
  */
-// TODO: auth on reads
-router.get('/system', async (_req, res) => {
+router.get('/system', vantageAuth, async (_req, res) => {
   try {
     res.json(await metrics.getSystemInfo());
   } catch (err) {
@@ -232,8 +230,7 @@ router.get('/system', async (_req, res) => {
  *               items:
  *                 type: object
  */
-// TODO: auth on reads
-router.get('/network', async (_req, res) => {
+router.get('/network', vantageAuth, async (_req, res) => {
   try {
     res.json(await metrics.getNetworkMetrics());
   } catch (err) {
@@ -258,8 +255,7 @@ router.get('/network', async (_req, res) => {
  *               items:
  *                 type: object
  */
-// TODO: auth on reads
-router.get('/services', async (_req, res) => {
+router.get('/services', vantageAuth, async (_req, res) => {
   try {
     res.json(await svc.getServices());
   } catch (err) {
@@ -327,8 +323,7 @@ router.post('/services/:id/restart', requireApiKey, (req, res) => {
  *               items:
  *                 type: object
  */
-// TODO: auth on reads
-router.get('/alerts', (req, res) => {
+router.get('/alerts', vantageAuth, (req, res) => {
   res.json(alerts.getAlerts(req.query));
 });
 
@@ -410,8 +405,7 @@ router.patch(
  *             schema:
  *               type: object
  */
-// TODO: auth on reads
-router.get('/alerts/thresholds', (_req, res) => {
+router.get('/alerts/thresholds', vantageAuth, (_req, res) => {
   res.json(alerts.THRESHOLDS);
 });
 
@@ -509,8 +503,7 @@ router.put('/settings', requireApiKey, (req, res) => {
  *               items:
  *                 type: object
  */
-// TODO: auth on reads
-router.get('/logs', (req, res) => {
+router.get('/logs', vantageAuth, (req, res) => {
   const { level, source, host, limit } = req.query;
   res.json(logs.getLogs({ level, source, host, limit: parseInt(limit) || 100 }));
 });
@@ -532,8 +525,7 @@ router.get('/logs', (req, res) => {
  *               items:
  *                 type: object
  */
-// TODO: auth on reads
-router.get('/hosts', (_req, res) => {
+router.get('/hosts', vantageAuth, (_req, res) => {
   res.json(hosts.getLiveHosts());
 });
 
@@ -581,8 +573,7 @@ router.patch('/hosts/:id/maintenance', requireApiKey, (req, res) => {
  *               items:
  *                 type: object
  */
-// TODO: auth on reads
-router.get('/containers', async (_req, res) => {
+router.get('/containers', vantageAuth, async (_req, res) => {
   try {
     res.json(await metrics.getContainers());
   } catch (err) {

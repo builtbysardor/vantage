@@ -1,0 +1,83 @@
+# =============================================================
+# Prometheus Alert Rules — prometheus/rules/infra.rules.yml
+#
+# Evaluated every 15s (inherits global.evaluation_interval).
+# Alerts are sent to Alertmanager when conditions persist for
+# the duration specified in "for:".
+# =============================================================
+
+groups:
+  - name: infrawatch.infra
+    interval: 15s
+    rules:
+
+      # ── Instance Down ──────────────────────────────────────────
+      - alert: InstanceDown
+        expr: up == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Instance {{ $labels.instance }} is down"
+          description: "Job '{{ $labels.job }}' target '{{ $labels.instance }}' has been unreachable for more than 1 minute."
+
+      # ── CPU > 80% ──────────────────────────────────────────────
+      - alert: HighCpuUsage
+        expr: >
+          (1 - avg by (instance) (
+            rate(node_cpu_seconds_total{mode="idle"}[5m])
+          )) * 100 > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High CPU usage on {{ $labels.instance }}"
+          description: "CPU utilization is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} (threshold: 80%)."
+
+      # ── RAM > 85% ──────────────────────────────────────────────
+      - alert: HighMemoryUsage
+        expr: >
+          (1 - (
+            node_memory_MemAvailable_bytes /
+            node_memory_MemTotal_bytes
+          )) * 100 > 85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High memory usage on {{ $labels.instance }}"
+          description: "Memory utilization is {{ $value | printf \"%.1f\" }}% on {{ $labels.instance }} (threshold: 85%)."
+
+      # ── Disk > 90% ─────────────────────────────────────────────
+      - alert: HighDiskUsage
+        expr: >
+          (1 - (
+            node_filesystem_avail_bytes{fstype=~"ext4|xfs|btrfs|overlay|zfs"} /
+            node_filesystem_size_bytes{fstype=~"ext4|xfs|btrfs|overlay|zfs"}
+          )) * 100 > 90
+        for: 5m
+        labels:
+          severity: critical
+        annotations:
+          summary: "High disk usage on {{ $labels.instance }}"
+          description: "Disk {{ $labels.mountpoint }} on {{ $labels.instance }} is {{ $value | printf \"%.1f\" }}% full (threshold: 90%)."
+
+      # ── Load Average > CPU count ───────────────────────────────
+      - alert: HighLoadAverage
+        expr: node_load1 > count without(cpu, mode)(node_cpu_seconds_total{mode="idle"}) * 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High load average on {{ $labels.instance }}"
+          description: "1-minute load average is {{ $value | printf \"%.2f\" }} on {{ $labels.instance }}."
+
+      # ── Network errors ─────────────────────────────────────────
+      - alert: HighNetworkErrors
+        expr: rate(node_network_receive_errs_total[5m]) + rate(node_network_transmit_errs_total[5m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Network errors on {{ $labels.instance }}"
+          description: "Network device {{ $labels.device }} on {{ $labels.instance }} is reporting {{ $value | printf \"%.0f\" }} errors/s."

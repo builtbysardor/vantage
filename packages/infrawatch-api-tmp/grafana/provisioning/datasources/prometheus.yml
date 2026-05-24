@@ -1,0 +1,25 @@
+# =============================================================
+# Grafana Data Source Provisioning
+# grafana/provisioning/datasources/prometheus.yml
+#
+# Grafana reads this file on startup and automatically adds
+# Prometheus as a data source — no manual UI clicks needed.
+# =============================================================
+
+apiVersion: 1
+
+deleteDatasources:
+  - name: Prometheus               # Drop any pre-existing entry so the pinned UID below takes effect
+    orgId: 1
+
+datasources:
+  - name: Prometheus               # Display name in Grafana UI
+    uid: prometheus                # Stable UID referenced by provisioned dashboards
+    type: prometheus               # Plugin type
+    access: proxy                  # Grafana backend proxies requests to Prometheus
+    url: http://prometheus:9090    # Docker service name resolves internally
+    isDefault: true                # Set as the default data source
+    editable: true                 # Allow editing via the UI
+    jsonData:
+      timeInterval: "15s"          # Match Prometheus scrape interval
+      httpMethod: POST             # Use POST for better PromQL compatibility

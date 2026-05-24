@@ -1,0 +1,83 @@
+# =============================================================
+# Prometheus Configuration — infrawatch/prometheus/prometheus.yml
+# =============================================================
+
+global:
+  scrape_interval:     15s
+  scrape_timeout:      10s
+  evaluation_interval: 15s
+
+# ── Alert Rules ───────────────────────────────────────────────
+rule_files:
+  - "/etc/prometheus/rules/*.rules.yml"
+
+# ── Alertmanager Connection ────────────────────────────────────
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - "alertmanager:9093"
+      scheme: http
+      timeout: 10s
+      api_version: v2
+
+# ── Scrape Jobs ───────────────────────────────────────────────
+scrape_configs:
+
+  # ----------------------------------------------------------
+  # Job 1: Prometheus itself
+  # ----------------------------------------------------------
+  - job_name: "prometheus"
+    static_configs:
+      - targets: ["localhost:9090"]
+        labels:
+          instance: "prometheus-server"
+
+  # ----------------------------------------------------------
+  # Job 2: Node Exporter — Linux host metrics
+  # ----------------------------------------------------------
+  - job_name: "node_exporter"
+    static_configs:
+      - targets: ["node_exporter:9100"]
+        labels:
+          instance: "linux-host"
+          environment: "production"
+
+  # ----------------------------------------------------------
+  # Job 3: Grafana health metrics
+  # ----------------------------------------------------------
+  - job_name: "grafana"
+    static_configs:
+      - targets: ["grafana:3000"]
+        labels:
+          instance: "grafana-server"
+
+  # ----------------------------------------------------------
+  # Job 4: cAdvisor — container resource metrics
+  # ----------------------------------------------------------
+  - job_name: "cadvisor"
+    static_configs:
+      - targets: ["cadvisor:8080"]
+        labels:
+          instance: "docker-host"
+          environment: "production"
+
+  # ----------------------------------------------------------
+  # Job 5: Alertmanager health
+  # ----------------------------------------------------------
+  - job_name: "alertmanager"
+    static_configs:
+      - targets: ["alertmanager:9093"]
+        labels:
+          instance: "alertmanager-server"
+
+  # ----------------------------------------------------------
+  # Job 6: InfraWatch Backend API
+  # /metrics returns a minimal Prometheus-format health gauge
+  # ----------------------------------------------------------
+  - job_name: "backend"
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["backend:8000"]
+        labels:
+          instance: "infrawatch-api"

@@ -1,0 +1,346 @@
+# =============================================================
+# InfraWatch — Complete Monitoring Stack
+# =============================================================
+# Phases implemented:
+#   Phase 1 — Core Observability (Prometheus, Grafana, Loki, Alertmanager, cAdvisor)
+#   Phase 2 — Real-time Streaming (WebSocket + SSE via backend)
+#   Phase 3 — Task Queue & Automation (Redis + Celery worker + Celery beat)
+#   Phase 4 — Security & RBAC (JWT auth via backend)
+#   Phase 5 — Database & Persistence (PostgreSQL)
+#
+# Start everything:
+#   make up
+# =============================================================
+
+version: "3.8"
+
+# ── Named volumes ─────────────────────────────────────────────
+volumes:
+  prometheus_data:
+  grafana_data:
+  loki_data:
+  promtail_data:
+  alertmanager_data:
+  postgres_data:
+  redis_data:
+
+# ── Shared network ────────────────────────────────────────────
+networks:
+  monitoring:
+    driver: bridge
+
+# ── Services ──────────────────────────────────────────────────
+services:
+
+  # ----------------------------------------------------------
+  # NODE EXPORTER — Linux host metrics (port 9100)
+  # ----------------------------------------------------------
+  node_exporter:
+    image: prom/node-exporter:latest
+    container_name: infrawatch_node_exporter
+    restart: unless-stopped
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/host/rootfs:ro
+    command:
+      - "--path.procfs=/host/proc"
+      - "--path.sysfs=/host/sys"
+      - "--path.rootfs=/host/rootfs"
+      - "--collector.filesystem.mount-points-exclude=^/(sys|proc|dev|host|etc)($$|/)"
+    ports:
+      - "9100:9100"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9100/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------
+  # ALERTMANAGER — Alert routing & delivery (port 9093)
+  # ----------------------------------------------------------
+  alertmanager:
+    image: prom/alertmanager:latest
+    container_name: infrawatch_alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    command:
+      - "--config.file=/etc/alertmanager/alertmanager.yml"
+      - "--storage.path=/alertmanager"
+      - "--web.listen-address=:9093"
+    ports:
+      - "9093:9093"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------
+  # PROMETHEUS — Metrics DB + rule evaluation (port 9090)
+  # ----------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: infrawatch_prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=${PROMETHEUS_RETENTION:-15d}"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--web.enable-lifecycle"
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+    depends_on:
+      - node_exporter
+      - alertmanager
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------
+  # GRAFANA — Dashboard visualization (port 3000)
+  # ----------------------------------------------------------
+  grafana:
+    image: grafana/grafana:latest
+    container_name: infrawatch_grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_ADMIN_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-infrawatch}
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_LOG_LEVEL=warn
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      - prometheus
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------
+  # LOKI — Log aggregation (port 3100)
+  # ----------------------------------------------------------
+  loki:
+    image: grafana/loki:latest
+    container_name: infrawatch_loki
+    restart: unless-stopped
+    volumes:
+      - ./loki/loki-config.yml:/etc/loki/local-config.yaml:ro
+      - loki_data:/loki
+    command:
+      - "-config.file=/etc/loki/local-config.yaml"
+    ports:
+      - "3100:3100"
+    healthcheck:
+      test: ["CMD", "/usr/bin/loki", "-version"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------
+  # PROMTAIL — Log collector → Loki
+  # ----------------------------------------------------------
+  promtail:
+    image: grafana/promtail:latest
+    container_name: infrawatch_promtail
+    restart: unless-stopped
+    volumes:
+      - ./promtail/promtail-config.yml:/etc/promtail/config.yml:ro
+      - /var/log:/var/log:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
+      - promtail_data:/tmp/promtail
+    command:
+      - "-config.file=/etc/promtail/config.yml"
+    depends_on:
+      - loki
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------
+  # CADVISOR — Container metrics (port 8080)
+  # ----------------------------------------------------------
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:latest
+    container_name: infrawatch_cadvisor
+    restart: unless-stopped
+    privileged: true
+    devices:
+      - /dev/kmsg:/dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "8080:8080"
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------
+  # POSTGRESQL — Persistent metrics & audit storage (port 5432)
+  # Phase 5: Historical analytics backend
+  # ----------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: infrawatch_postgres
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-infrawatch}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-infrawatch}
+      - POSTGRES_DB=${POSTGRES_DB:-infrawatch}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5444:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-infrawatch}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------
+  # REDIS — Message broker for Celery (port 6379)
+  # Phase 3: Task queue backbone
+  # ----------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: infrawatch_redis
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    command: redis-server --appendonly yes
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------
+  # BACKEND API — FastAPI (port 8000)
+  # Phase 1: REST API  Phase 2: WebSocket+SSE
+  # Phase 4: JWT auth  Phase 5: DB analytics
+  # ----------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      network: host
+    container_name: infrawatch_backend
+    restart: unless-stopped
+    environment:
+      - PROMETHEUS_URL=http://prometheus:9090
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-infrawatch}:${POSTGRES_PASSWORD:-infrawatch}@postgres:5432/${POSTGRES_DB:-infrawatch}
+      - REDIS_URL=redis://redis:6379/0
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:-infrawatch-dev-secret-change-in-prod}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-infrawatch}
+      - VIEWER_PASSWORD=${VIEWER_PASSWORD:-viewer123}
+      - DB_ENABLED=true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      prometheus:
+        condition: service_healthy
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------
+  # CELERY WORKER — Background task executor
+  # Phase 3: Metrics snapshots, alert history, auto-remediation
+  # ----------------------------------------------------------
+  celery_worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      network: host
+    container_name: infrawatch_celery_worker
+    restart: unless-stopped
+    command: celery -A celery_app worker --loglevel=info --concurrency=2
+    environment:
+      - PROMETHEUS_URL=http://prometheus:9090
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-infrawatch}:${POSTGRES_PASSWORD:-infrawatch}@postgres:5432/${POSTGRES_DB:-infrawatch}
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - monitoring
+
+  # ----------------------------------------------------------
+  # CELERY BEAT — Periodic task scheduler
+  # Phase 3: Triggers snapshot/health-check tasks on schedule
+  # ----------------------------------------------------------
+  celery_beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      network: host
+    container_name: infrawatch_celery_beat
+    restart: unless-stopped
+    command: celery -A celery_app beat --loglevel=info
+    environment:
+      - PROMETHEUS_URL=http://prometheus:9090
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-infrawatch}:${POSTGRES_PASSWORD:-infrawatch}@postgres:5432/${POSTGRES_DB:-infrawatch}
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - monitoring

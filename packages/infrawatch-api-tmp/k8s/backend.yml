@@ -1,0 +1,145 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: infrawatch-secrets
+  namespace: infrawatch
+type: Opaque
+stringData:
+  postgres-user: infrawatch
+  postgres-password: infrawatch
+  jwt-secret: infrawatch-prod-secret-change-me
+  admin-password: infrawatch
+  viewer-password: viewer123
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: infrawatch
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: ghcr.io/builtbysardor/infrawatch-backend:latest
+          ports:
+            - containerPort: 8000
+          env:
+            - name: PROMETHEUS_URL
+              value: http://prometheus:9090
+            - name: DATABASE_URL
+              value: postgresql://infrawatch:$(POSTGRES_PASSWORD)@postgres:5432/infrawatch
+            - name: REDIS_URL
+              value: redis://redis:6379/0
+            - name: DB_ENABLED
+              value: "true"
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: infrawatch-secrets
+                  key: jwt-secret
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: infrawatch-secrets
+                  key: admin-password
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: infrawatch-secrets
+                  key: postgres-password
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 10
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend
+  namespace: infrawatch
+spec:
+  selector:
+    app: backend
+  ports:
+    - port: 8000
+      targetPort: 8000
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-worker
+  namespace: infrawatch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: celery-worker
+  template:
+    metadata:
+      labels:
+        app: celery-worker
+    spec:
+      containers:
+        - name: celery-worker
+          image: ghcr.io/builtbysardor/infrawatch-backend:latest
+          command: ["celery", "-A", "celery_app", "worker", "--loglevel=info", "--concurrency=2"]
+          env:
+            - name: PROMETHEUS_URL
+              value: http://prometheus:9090
+            - name: DATABASE_URL
+              value: postgresql://infrawatch:$(POSTGRES_PASSWORD)@postgres:5432/infrawatch
+            - name: REDIS_URL
+              value: redis://redis:6379/0
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: infrawatch-secrets
+                  key: postgres-password
+          resources:
+            limits:
+              memory: "256Mi"
+              cpu: "250m"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: celery-beat
+  namespace: infrawatch
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: celery-beat
+  template:
+    metadata:
+      labels:
+        app: celery-beat
+    spec:
+      containers:
+        - name: celery-beat
+          image: ghcr.io/builtbysardor/infrawatch-backend:latest
+          command: ["celery", "-A", "celery_app", "beat", "--loglevel=info"]
+          env:
+            - name: REDIS_URL
+              value: redis://redis:6379/0
+          resources:
+            limits:
+              memory: "128Mi"
+              cpu: "100m"

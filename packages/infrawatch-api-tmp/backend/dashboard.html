@@ -1,0 +1,814 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>InfraWatch — Command Center</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root {
+  --bg:       #030b1a;
+  --surf:     rgba(8, 20, 50, 0.88);
+  --surf2:    rgba(12, 28, 64, 0.7);
+  --border:   rgba(56, 189, 248, 0.1);
+  --border2:  rgba(56, 189, 248, 0.28);
+  --cyan:     #38bdf8;
+  --purple:   #a78bfa;
+  --green:    #34d399;
+  --orange:   #fb923c;
+  --red:      #f87171;
+  --yellow:   #fbbf24;
+  --text:     #e2e8f0;
+  --dim:      #94a3b8;
+  --muted:    #475569;
+  --mono:     'JetBrains Mono', monospace;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+
+body {
+  background: var(--bg);
+  background-image:
+    radial-gradient(ellipse 100% 60% at 50% -10%, rgba(56,189,248,.07) 0%, transparent 70%),
+    linear-gradient(rgba(56,189,248,.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56,189,248,.022) 1px, transparent 1px);
+  background-size: auto, 48px 48px, 48px 48px;
+  color: var(--text);
+  font-family: 'Inter', system-ui, sans-serif;
+  min-height: 100vh;
+}
+
+/* ─── NAVBAR ─────────────────────────────────── */
+.nav {
+  position: sticky; top: 0; z-index: 100;
+  background: rgba(3,11,26,.92);
+  backdrop-filter: blur(20px);
+  border-bottom: 1px solid var(--border);
+  padding: 0 24px;
+  height: 58px;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.nav-brand { display:flex; align-items:center; gap:12px }
+.nav-logo  { width:34px; height:34px }
+.nav-title { font-size:.95rem; font-weight:700; color:var(--cyan); letter-spacing:.06em }
+.nav-sub   { font-size:.6rem; color:var(--muted); letter-spacing:.12em; text-transform:uppercase; margin-top:2px }
+.nav-right { display:flex; align-items:center; gap:18px }
+
+.badge {
+  display:flex; align-items:center; gap:7px;
+  padding:4px 14px; border-radius:100px;
+  background:rgba(52,211,153,.1); border:1px solid rgba(52,211,153,.22);
+  font-size:.72rem; font-weight:600; color:var(--green); letter-spacing:.04em;
+  transition:all .3s;
+}
+.badge.off { background:rgba(248,113,113,.1); border-color:rgba(248,113,113,.22); color:var(--red) }
+
+.live-dot {
+  width:7px; height:7px; border-radius:50%; background:var(--green);
+  animation: pdot 2s ease-in-out infinite;
+}
+.live-dot.off { background:var(--red); animation:none }
+@keyframes pdot {
+  0%,100%{ opacity:1; box-shadow:0 0 0 0 rgba(52,211,153,.6) }
+  50%    { opacity:.8; box-shadow:0 0 0 5px rgba(52,211,153,0) }
+}
+.nav-ts { font-family:var(--mono); font-size:.72rem; color:var(--muted) }
+
+/* ─── LAYOUT ─────────────────────────────────── */
+.main {
+  max-width:1560px; margin:0 auto;
+  padding:22px 22px 32px;
+  display:flex; flex-direction:column; gap:18px;
+}
+
+/* ─── SECTION HEADER ─────────────────────────── */
+.sh { display:flex; align-items:center; gap:10px; margin-bottom:14px }
+.sh-title { font-size:.67rem; font-weight:600; color:var(--dim); text-transform:uppercase; letter-spacing:.12em; white-space:nowrap }
+.sh-line  { flex:1; height:1px; background:var(--border) }
+
+/* ─── CARD ───────────────────────────────────── */
+.card {
+  background:var(--surf);
+  border:1px solid var(--border);
+  border-radius:14px; padding:20px;
+  backdrop-filter:blur(12px);
+  transition:border-color .3s, box-shadow .3s;
+  position:relative; overflow:hidden;
+}
+.card::before {
+  content:''; position:absolute; top:0; left:0; right:0; height:1px;
+  background:linear-gradient(90deg,transparent,rgba(56,189,248,.3),transparent);
+}
+.card:hover { border-color:var(--border2); box-shadow:0 0 28px rgba(56,189,248,.06) }
+
+/* ─── GAUGE GRID ─────────────────────────────── */
+.gauge-grid {
+  display:grid; grid-template-columns:repeat(4,1fr); gap:15px;
+}
+@media(max-width:900px){ .gauge-grid{ grid-template-columns:repeat(2,1fr) } }
+@media(max-width:480px){ .gauge-grid{ grid-template-columns:1fr } }
+
+.gauge-card { text-align:center; padding:22px 16px 18px }
+
+.gauge-wrap {
+  position:relative; width:118px; height:118px;
+  margin:0 auto 14px;
+}
+.g-svg { transform:rotate(-90deg); width:118px; height:118px }
+.g-bg  { fill:none; stroke:rgba(255,255,255,.05); stroke-width:8 }
+.g-arc {
+  fill:none; stroke-width:8; stroke-linecap:round;
+  transition:stroke-dashoffset .85s cubic-bezier(.4,0,.2,1), stroke .45s;
+  filter:drop-shadow(0 0 6px currentColor);
+}
+.g-center {
+  position:absolute; top:50%; left:50%;
+  transform:translate(-50%,-50%); text-align:center;
+}
+.g-val  { font-family:var(--mono); font-size:1.35rem; font-weight:700; line-height:1; color:var(--text) }
+.g-unit { font-size:.58rem; color:var(--muted); margin-top:1px }
+.g-label{ font-size:.67rem; font-weight:600; text-transform:uppercase; letter-spacing:.1em; color:var(--dim); margin-bottom:5px }
+.g-sub  { font-family:var(--mono); font-size:.65rem; color:var(--muted); margin-top:3px; transition:color .4s }
+
+/* ─── UPTIME CARD ────────────────────────────── */
+.uptime-num { font-family:var(--mono); font-size:2rem; font-weight:700; color:var(--green); text-shadow:0 0 20px rgba(52,211,153,.45); line-height:1 }
+.uptime-lbl { font-size:.6rem; color:var(--muted); text-transform:uppercase; letter-spacing:.1em; margin:4px 0 10px }
+.uptime-parts { display:flex; gap:10px; justify-content:center; flex-wrap:wrap }
+.uptime-part  { font-family:var(--mono); font-size:.72rem; color:var(--dim) }
+.uptime-bar   { height:4px; background:rgba(255,255,255,.05); border-radius:2px; margin-top:14px; overflow:hidden }
+.uptime-fill  { height:100%; background:linear-gradient(90deg,var(--green),var(--cyan)); border-radius:2px; width:100% }
+
+/* ─── MID ROW ────────────────────────────────── */
+.mid-row {
+  display:grid; grid-template-columns:1fr 1fr; gap:16px;
+}
+@media(max-width:768px){ .mid-row{ grid-template-columns:1fr } }
+
+/* ─── NETWORK ────────────────────────────────── */
+.net-io { display:flex; flex-direction:column; gap:13px; margin-bottom:16px }
+.net-row { display:flex; align-items:center; gap:11px }
+.net-arrow { font-size:1rem; width:18px; text-align:center; flex-shrink:0 }
+.net-lbl   { font-size:.68rem; color:var(--muted); width:28px }
+.net-bar-bg{ flex:1; height:5px; background:rgba(255,255,255,.05); border-radius:3px; overflow:hidden }
+.net-bar   { height:100%; border-radius:3px; transition:width .6s cubic-bezier(.4,0,.2,1); min-width:2px }
+.net-val   { font-family:var(--mono); font-size:.73rem; font-weight:600; color:var(--text); width:76px; text-align:right }
+
+.spark-lbl { font-size:.62rem; color:var(--muted); text-transform:uppercase; letter-spacing:.08em; margin-bottom:5px }
+canvas.spark { display:block; width:100%; height:58px; border-radius:6px }
+
+/* ─── SERVICES ───────────────────────────────── */
+.svc-list { display:flex; flex-direction:column; gap:7px }
+.svc-row  {
+  display:flex; align-items:center; padding:8px 11px;
+  background:rgba(255,255,255,.02); border:1px solid rgba(255,255,255,.04);
+  border-radius:8px; transition:background .2s;
+}
+.svc-row:hover { background:rgba(255,255,255,.04) }
+.svc-dot  { width:7px; height:7px; border-radius:50%; flex-shrink:0; margin-right:10px }
+.svc-dot.up   { background:var(--green); box-shadow:0 0 6px rgba(52,211,153,.5) }
+.svc-dot.dn   { background:var(--red);   box-shadow:0 0 6px rgba(248,113,113,.5) }
+.svc-dot.unk  { background:var(--muted) }
+.svc-name { flex:1; font-size:.78rem; font-weight:500; color:var(--text) }
+.svc-inst { font-family:var(--mono); font-size:.62rem; color:var(--muted); margin-right:10px }
+.svc-tag  { font-size:.58rem; font-weight:700; padding:2px 8px; border-radius:100px; letter-spacing:.06em }
+.svc-tag.up { background:rgba(52,211,153,.12); color:var(--green); border:1px solid rgba(52,211,153,.22) }
+.svc-tag.dn { background:rgba(248,113,113,.12); color:var(--red);   border:1px solid rgba(248,113,113,.22) }
+
+/* ─── BOTTOM ROW ─────────────────────────────── */
+.bot-row {
+  display:grid; grid-template-columns:1fr 1fr; gap:16px;
+}
+@media(max-width:768px){ .bot-row{ grid-template-columns:1fr } }
+
+/* ─── ALERTS ─────────────────────────────────── */
+.alert-counts { display:flex; gap:11px; margin-bottom:15px }
+.ac-box { flex:1; padding:12px 8px; border-radius:9px; text-align:center }
+.ac-box.fire  { background:rgba(248,113,113,.09); border:1px solid rgba(248,113,113,.2) }
+.ac-box.pend  { background:rgba(251,191,36,.09);  border:1px solid rgba(251,191,36,.2) }
+.ac-box.total { background:rgba(56,189,248,.09);  border:1px solid rgba(56,189,248,.2) }
+.ac-num  { font-family:var(--mono); font-size:1.55rem; font-weight:700; line-height:1 }
+.ac-box.fire  .ac-num  { color:var(--red) }
+.ac-box.pend  .ac-num  { color:var(--yellow) }
+.ac-box.total .ac-num  { color:var(--cyan) }
+.ac-lbl  { font-size:.6rem; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; margin-top:3px }
+
+.alert-list { display:flex; flex-direction:column; gap:5px; max-height:168px; overflow-y:auto }
+.alert-list::-webkit-scrollbar { width:3px }
+.alert-list::-webkit-scrollbar-thumb { background:var(--muted); border-radius:2px }
+.alert-item {
+  display:flex; align-items:center; gap:8px; padding:8px 10px;
+  border-radius:7px; font-size:.74rem;
+}
+.alert-item.firing  { background:rgba(248,113,113,.08); border:1px solid rgba(248,113,113,.15) }
+.alert-item.pending { background:rgba(251,191,36,.08);  border:1px solid rgba(251,191,36,.15) }
+.al-dot   { width:6px; height:6px; border-radius:50%; flex-shrink:0 }
+.al-dot.firing  { background:var(--red) }
+.al-dot.pending { background:var(--yellow) }
+.al-name  { flex:1; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis }
+.al-state { font-size:.58rem; font-weight:700; padding:1px 7px; border-radius:100px }
+.al-state.firing  { background:rgba(248,113,113,.2); color:var(--red) }
+.al-state.pending { background:rgba(251,191,36,.2);  color:var(--yellow) }
+.no-items { text-align:center; padding:22px; font-size:.78rem; color:var(--muted) }
+
+/* ─── ANOMALY ────────────────────────────────── */
+.anm-top {
+  display:flex; align-items:center; gap:16px; margin-bottom:17px; padding:14px;
+  background:rgba(255,255,255,.02); border:1px solid var(--border); border-radius:10px;
+}
+.anm-ring { position:relative; width:74px; height:74px; flex-shrink:0 }
+.anm-svg  { transform:rotate(-90deg); width:74px; height:74px }
+.anm-num  {
+  position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+  font-family:var(--mono); font-size:.88rem; font-weight:700; color:var(--text); white-space:nowrap;
+}
+.anm-level{ font-size:.95rem; font-weight:700; margin-bottom:5px }
+.anm-level.low  { color:var(--green) }
+.anm-level.med  { color:var(--yellow) }
+.anm-level.high { color:var(--red) }
+.anm-desc { font-size:.74rem; color:var(--dim); line-height:1.45 }
+
+.anm-methods { display:flex; flex-direction:column; gap:7px }
+.anm-row  {
+  display:flex; align-items:center; gap:10px; padding:8px 11px;
+  background:rgba(255,255,255,.02); border-radius:7px;
+}
+.anm-icon { font-size:.85rem; width:20px; text-align:center; flex-shrink:0; color:var(--dim) }
+.anm-name { flex:1; font-size:.74rem; color:var(--dim) }
+.anm-tag  { font-size:.58rem; font-weight:700; padding:2px 8px; border-radius:100px }
+.anm-tag.ok  { background:rgba(52,211,153,.1);  color:var(--green);  border:1px solid rgba(52,211,153,.22) }
+.anm-tag.bad { background:rgba(248,113,113,.1); color:var(--red);    border:1px solid rgba(248,113,113,.22) }
+.anm-tag.na  { background:rgba(71,85,105,.15);  color:var(--muted);  border:1px solid rgba(71,85,105,.25) }
+
+/* ─── FOOTER ─────────────────────────────────── */
+.footer {
+  text-align:center; padding:18px 24px;
+  font-size:.63rem; color:var(--muted);
+  border-top:1px solid var(--border);
+}
+
+/* ─── SCROLLBAR ──────────────────────────────── */
+::-webkit-scrollbar { width:5px }
+::-webkit-scrollbar-track { background:transparent }
+::-webkit-scrollbar-thumb { background:rgba(56,189,248,.2); border-radius:3px }
+::-webkit-scrollbar-thumb:hover { background:rgba(56,189,248,.4) }
+</style>
+</head>
+<body>
+
+<!-- ═══ NAVBAR ════════════════════════════════════════ -->
+<nav class="nav">
+  <div class="nav-brand">
+    <svg class="nav-logo" viewBox="0 0 34 34" fill="none">
+      <path d="M17 2L3 8V19C3 26.18 9.26 32 17 32C24.74 32 31 26.18 31 19V8L17 2Z"
+            fill="rgba(56,189,248,.08)" stroke="#38bdf8" stroke-width="1.4"/>
+      <polyline points="11,17 15,21 23,13" stroke="#38bdf8" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      <circle cx="17" cy="17" r="2.5" fill="rgba(56,189,248,.35)"/>
+    </svg>
+    <div>
+      <div class="nav-title">INFRAWATCH</div>
+      <div class="nav-sub">Command Center</div>
+    </div>
+  </div>
+  <div class="nav-right">
+    <div class="badge" id="badge">
+      <div class="live-dot" id="ldot"></div>
+      <span id="conn-txt">Connecting…</span>
+    </div>
+    <span class="nav-ts" id="ts">--:--:--</span>
+  </div>
+</nav>
+
+<!-- ═══ MAIN ══════════════════════════════════════════ -->
+<div class="main">
+
+  <!-- ── GAUGES ── -->
+  <div>
+    <div class="sh"><span class="sh-title">System Resources</span><div class="sh-line"></div></div>
+    <div class="gauge-grid">
+
+      <!-- CPU -->
+      <div class="card gauge-card">
+        <div class="g-label">CPU Usage</div>
+        <div class="gauge-wrap">
+          <svg class="g-svg" viewBox="0 0 118 118">
+            <defs>
+              <linearGradient id="gc" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#38bdf8"/>
+                <stop offset="100%" stop-color="#818cf8"/>
+              </linearGradient>
+            </defs>
+            <circle class="g-bg" cx="59" cy="59" r="49"/>
+            <circle class="g-arc" id="g-cpu" cx="59" cy="59" r="49"
+              stroke="url(#gc)" stroke-dasharray="307.88" stroke-dashoffset="307.88"/>
+          </svg>
+          <div class="g-center">
+            <div class="g-val" id="v-cpu">—</div>
+            <div class="g-unit">%</div>
+          </div>
+        </div>
+        <div class="g-sub" id="s-cpu">waiting…</div>
+      </div>
+
+      <!-- RAM -->
+      <div class="card gauge-card">
+        <div class="g-label">RAM Usage</div>
+        <div class="gauge-wrap">
+          <svg class="g-svg" viewBox="0 0 118 118">
+            <defs>
+              <linearGradient id="gr" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#a78bfa"/>
+                <stop offset="100%" stop-color="#f472b6"/>
+              </linearGradient>
+            </defs>
+            <circle class="g-bg" cx="59" cy="59" r="49"/>
+            <circle class="g-arc" id="g-ram" cx="59" cy="59" r="49"
+              stroke="url(#gr)" stroke-dasharray="307.88" stroke-dashoffset="307.88"/>
+          </svg>
+          <div class="g-center">
+            <div class="g-val" id="v-ram">—</div>
+            <div class="g-unit">%</div>
+          </div>
+        </div>
+        <div class="g-sub" id="s-ram">waiting…</div>
+      </div>
+
+      <!-- DISK -->
+      <div class="card gauge-card">
+        <div class="g-label">Disk Usage</div>
+        <div class="gauge-wrap">
+          <svg class="g-svg" viewBox="0 0 118 118">
+            <defs>
+              <linearGradient id="gd" x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stop-color="#fb923c"/>
+                <stop offset="100%" stop-color="#fbbf24"/>
+              </linearGradient>
+            </defs>
+            <circle class="g-bg" cx="59" cy="59" r="49"/>
+            <circle class="g-arc" id="g-disk" cx="59" cy="59" r="49"
+              stroke="url(#gd)" stroke-dasharray="307.88" stroke-dashoffset="307.88"/>
+          </svg>
+          <div class="g-center">
+            <div class="g-val" id="v-disk">—</div>
+            <div class="g-unit">%</div>
+          </div>
+        </div>
+        <div class="g-sub" id="s-disk">waiting…</div>
+      </div>
+
+      <!-- UPTIME -->
+      <div class="card gauge-card">
+        <div class="g-label">System Uptime</div>
+        <div style="margin:14px 0 4px">
+          <div class="uptime-num" id="v-uptime">—</div>
+          <div class="uptime-lbl">hours online</div>
+          <div class="uptime-parts">
+            <span class="uptime-part" id="up-d">—d</span>
+            <span class="uptime-part" id="up-h">—h</span>
+            <span class="uptime-part" id="up-m">—m</span>
+          </div>
+        </div>
+        <div class="uptime-bar"><div class="uptime-fill"></div></div>
+        <div class="g-sub" style="margin-top:7px;color:var(--green)">System stable</div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ── MID ROW ── -->
+  <div class="mid-row">
+
+    <!-- NETWORK -->
+    <div class="card">
+      <div class="sh"><span class="sh-title">Network I/O</span><div class="sh-line"></div></div>
+      <div class="net-io">
+        <div class="net-row">
+          <span class="net-arrow" style="color:var(--cyan)">↑</span>
+          <span class="net-lbl">OUT</span>
+          <div class="net-bar-bg">
+            <div class="net-bar" id="bar-out"
+              style="background:linear-gradient(90deg,#38bdf8,#818cf8);width:0%"></div>
+          </div>
+          <span class="net-val" id="v-out">— KB/s</span>
+        </div>
+        <div class="net-row">
+          <span class="net-arrow" style="color:var(--purple)">↓</span>
+          <span class="net-lbl">IN</span>
+          <div class="net-bar-bg">
+            <div class="net-bar" id="bar-in"
+              style="background:linear-gradient(90deg,#a78bfa,#f472b6);width:0%"></div>
+          </div>
+          <span class="net-val" id="v-in">— KB/s</span>
+        </div>
+      </div>
+      <div class="spark-lbl">Last 60 s throughput</div>
+      <canvas class="spark" id="spark"></canvas>
+    </div>
+
+    <!-- SERVICES -->
+    <div class="card">
+      <div class="sh"><span class="sh-title">Service Health</span><div class="sh-line"></div></div>
+      <div class="svc-list" id="svc-list">
+        <div class="svc-row">
+          <div class="svc-dot unk"></div>
+          <span class="svc-name">Loading targets…</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ── BOTTOM ROW ── -->
+  <div class="bot-row">
+
+    <!-- ALERTS -->
+    <div class="card">
+      <div class="sh"><span class="sh-title">Active Alerts</span><div class="sh-line"></div></div>
+      <div class="alert-counts">
+        <div class="ac-box fire">
+          <div class="ac-num" id="cnt-fire">—</div>
+          <div class="ac-lbl">Firing</div>
+        </div>
+        <div class="ac-box pend">
+          <div class="ac-num" id="cnt-pend">—</div>
+          <div class="ac-lbl">Pending</div>
+        </div>
+        <div class="ac-box total">
+          <div class="ac-num" id="cnt-tot">—</div>
+          <div class="ac-lbl">Total</div>
+        </div>
+      </div>
+      <div class="alert-list" id="alert-list">
+        <div class="no-items">Loading alerts…</div>
+      </div>
+    </div>
+
+    <!-- ANOMALY -->
+    <div class="card">
+      <div class="sh"><span class="sh-title">ML Anomaly Detection</span><div class="sh-line"></div></div>
+      <div class="anm-top">
+        <div class="anm-ring">
+          <svg class="anm-svg" viewBox="0 0 74 74">
+            <circle fill="none" stroke="rgba(255,255,255,.05)" stroke-width="6" cx="37" cy="37" r="31"/>
+            <circle fill="none" id="anm-arc" stroke="#34d399" stroke-width="6" stroke-linecap="round"
+              cx="37" cy="37" r="31"
+              stroke-dasharray="194.78" stroke-dashoffset="194.78"/>
+          </svg>
+          <div class="anm-num" id="anm-score">—%</div>
+        </div>
+        <div>
+          <div class="anm-level low" id="anm-level">Loading…</div>
+          <div class="anm-desc"  id="anm-desc">Fetching ML engine data…</div>
+        </div>
+      </div>
+      <div class="anm-methods">
+        <div class="anm-row">
+          <span class="anm-icon">σ</span>
+          <span class="anm-name">Z-Score (3σ rule)</span>
+          <span class="anm-tag na" id="m-zscore">—</span>
+        </div>
+        <div class="anm-row">
+          <span class="anm-icon">◈</span>
+          <span class="anm-name">IQR Fence Method</span>
+          <span class="anm-tag na" id="m-iqr">—</span>
+        </div>
+        <div class="anm-row">
+          <span class="anm-icon">⬡</span>
+          <span class="anm-name">Isolation Forest</span>
+          <span class="anm-tag na" id="m-iso">—</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div class="footer">
+  InfraWatch v2.0 &nbsp;·&nbsp;
+  Real-time WebSocket + REST &nbsp;·&nbsp;
+  ML Anomaly Detection (Z-Score / IQR / Isolation Forest)
+</div>
+
+<script>
+// ── CONFIG ──────────────────────────────────────────────
+const isFile = location.protocol === 'file:';
+const HOST   = isFile ? 'localhost:8000' : location.host;
+const API    = `http://${HOST}`;
+const WS_URL = `ws://${HOST}/ws/metrics`;
+
+// Gauge circumference (r=49): 2π×49 ≈ 307.88
+const C_GAUGE  = 307.876;
+// Anomaly arc (r=31): 2π×31 ≈ 194.78
+const C_ANM    = 194.779;
+
+// ── SPARKLINE BUFFER ─────────────────────────────────────
+const spark = { in: [], out: [], max: 60 };
+
+// ── GAUGE UPDATE ─────────────────────────────────────────
+function setGauge(id, pct) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const safe = Math.min(100, Math.max(0, pct || 0));
+  el.style.strokeDashoffset = C_GAUGE - C_GAUGE * safe / 100;
+}
+
+function statusOf(pct) {
+  if (pct == null) return { label: 'waiting…', color: 'var(--muted)' };
+  if (pct < 60)   return { label: 'Normal',    color: 'var(--green)' };
+  if (pct < 80)   return { label: 'Elevated',  color: 'var(--yellow)' };
+  return             { label: 'Critical',   color: 'var(--red)' };
+}
+
+function fmt(v, d=1) {
+  return v != null ? Number(v).toFixed(d) : '—';
+}
+
+function fmtNet(bps) {
+  if (bps == null) return '— B/s';
+  const kb = bps / 1024;
+  if (kb < 1024) return kb.toFixed(1) + ' KB/s';
+  return (kb / 1024).toFixed(2) + ' MB/s';
+}
+
+function fmtUptime(sec) {
+  if (!sec) return { total: '—', d: '—d', h: '—h', m: '—m' };
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  return { total: (sec / 3600).toFixed(1), d: d+'d', h: h+'h', m: m+'m' };
+}
+
+// ── WEBSOCKET ─────────────────────────────────────────────
+const badge   = document.getElementById('badge');
+const ldot    = document.getElementById('ldot');
+const connTxt = document.getElementById('conn-txt');
+const tsEl    = document.getElementById('ts');
+
+function connectWS() {
+  const ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    ldot.classList.remove('off');
+    badge.classList.remove('off');
+    connTxt.textContent = 'Live';
+  };
+
+  ws.onmessage = e => {
+    const d = JSON.parse(e.data);
+    if (d.error) return;
+    onMetrics(d);
+    const t = new Date(d.timestamp + 'Z');
+    tsEl.textContent = t.toLocaleTimeString();
+  };
+
+  ws.onclose = () => {
+    ldot.classList.add('off');
+    badge.classList.add('off');
+    connTxt.textContent = 'Disconnected';
+    setTimeout(connectWS, 3000);
+  };
+
+  ws.onerror = () => ws.close();
+}
+
+function onMetrics(d) {
+  const cpu  = d.cpu_usage_percent;
+  const ram  = d.ram_usage_percent;
+  const disk = d.disk_usage_percent;
+  const ni   = d.network_in_bytes_sec;
+  const no   = d.network_out_bytes_sec;
+  const up   = d.uptime_seconds;
+
+  // Gauges
+  setGauge('g-cpu',  cpu);
+  setGauge('g-ram',  ram);
+  setGauge('g-disk', disk);
+
+  document.getElementById('v-cpu').textContent  = fmt(cpu);
+  document.getElementById('v-ram').textContent  = fmt(ram);
+  document.getElementById('v-disk').textContent = fmt(disk);
+
+  [['cpu', cpu], ['ram', ram], ['disk', disk]].forEach(([id, v]) => {
+    const st = statusOf(v);
+    const el = document.getElementById('s-' + id);
+    if (el) { el.textContent = st.label; el.style.color = st.color; }
+  });
+
+  // Network
+  document.getElementById('v-in').textContent  = fmtNet(ni);
+  document.getElementById('v-out').textContent = fmtNet(no);
+  const CAP = 512 * 1024; // 512 KB/s = 100% bar
+  document.getElementById('bar-in').style.width  = Math.min(100, ((ni||0)/CAP)*100) + '%';
+  document.getElementById('bar-out').style.width = Math.min(100, ((no||0)/CAP)*100) + '%';
+
+  // Sparkline buffer
+  spark.in.push(ni || 0);
+  spark.out.push(no || 0);
+  if (spark.in.length  > spark.max) spark.in.shift();
+  if (spark.out.length > spark.max) spark.out.shift();
+  drawSpark();
+
+  // Uptime
+  const ut = fmtUptime(up);
+  document.getElementById('v-uptime').textContent = ut.total;
+  document.getElementById('up-d').textContent = ut.d;
+  document.getElementById('up-h').textContent = ut.h;
+  document.getElementById('up-m').textContent = ut.m;
+}
+
+// ── SPARKLINE CANVAS ─────────────────────────────────────
+function drawSpark() {
+  const canvas = document.getElementById('spark');
+  if (!canvas) return;
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.offsetWidth  * dpr;
+  const H = canvas.offsetHeight * dpr;
+  canvas.width  = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, W, H);
+
+  const len = Math.max(spark.in.length, spark.out.length);
+  if (len < 2) return;
+
+  const allVals = [...spark.in, ...spark.out].filter(v => v > 0);
+  const peak = allVals.length ? Math.max(...allVals) * 1.25 : 1;
+
+  function series(data, c1, c2) {
+    if (data.length < 2) return;
+    const pts = data.map((v, i) => ({
+      x: (i / (data.length - 1)) * W,
+      y: H - (Math.min(1, v / peak)) * H * 0.88 - H * 0.04,
+    }));
+
+    // Fill
+    const fg = ctx.createLinearGradient(0, 0, W, 0);
+    fg.addColorStop(0, c1 + '30');
+    fg.addColorStop(1, c2 + '30');
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, H);
+    pts.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.lineTo(pts[pts.length - 1].x, H);
+    ctx.closePath();
+    ctx.fillStyle = fg;
+    ctx.fill();
+
+    // Stroke
+    const lg = ctx.createLinearGradient(0, 0, W, 0);
+    lg.addColorStop(0, c1);
+    lg.addColorStop(1, c2);
+    ctx.beginPath();
+    pts.forEach((p, i) => i === 0 ? ctx.moveTo(p.x, p.y) : ctx.lineTo(p.x, p.y));
+    ctx.strokeStyle = lg;
+    ctx.lineWidth = 1.5 * dpr;
+    ctx.lineJoin = 'round';
+    ctx.stroke();
+  }
+
+  series(spark.in,  '#a78bfa', '#f472b6');
+  series(spark.out, '#38bdf8', '#818cf8');
+}
+
+// ── ANOMALY ARC ───────────────────────────────────────────
+function setAnomaly(score, methods) {
+  const pct = Math.min(1, Math.max(0, score || 0));
+  const arc  = document.getElementById('anm-arc');
+  const numEl = document.getElementById('anm-score');
+  const lvlEl = document.getElementById('anm-level');
+  const dscEl = document.getElementById('anm-desc');
+
+  arc.style.strokeDashoffset = C_ANM - C_ANM * pct;
+  numEl.textContent = Math.round(pct * 100) + '%';
+
+  if (pct < 0.33) {
+    arc.style.stroke = '#34d399';
+    lvlEl.textContent = 'LOW RISK';
+    lvlEl.className = 'anm-level low';
+    dscEl.textContent = 'All metrics within normal statistical range.';
+  } else if (pct < 0.66) {
+    arc.style.stroke = '#fbbf24';
+    lvlEl.textContent = 'MEDIUM RISK';
+    lvlEl.className = 'anm-level med';
+    dscEl.textContent = 'Unusual patterns detected. Monitoring closely.';
+  } else {
+    arc.style.stroke = '#f87171';
+    lvlEl.textContent = 'HIGH RISK';
+    lvlEl.className = 'anm-level high';
+    dscEl.textContent = 'Multiple anomalies active. Immediate review recommended.';
+  }
+
+  function setTag(id, val) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    if (val == null) { el.textContent = 'N/A';    el.className = 'anm-tag na'; }
+    else if (val)    { el.textContent = 'ANOMALY'; el.className = 'anm-tag bad'; }
+    else             { el.textContent = 'NORMAL';  el.className = 'anm-tag ok'; }
+  }
+
+  const m = methods || {};
+  setTag('m-zscore', m.zscore   ?? null);
+  setTag('m-iqr',    m.iqr      ?? null);
+  setTag('m-iso',    m.isolation_forest ?? null);
+}
+
+// ── API POLLS ─────────────────────────────────────────────
+async function pollAlerts() {
+  try {
+    const r = await fetch(API + '/api/alerts');
+    const d = await r.json();
+    document.getElementById('cnt-fire').textContent = d.firing  ?? 0;
+    document.getElementById('cnt-pend').textContent = d.pending ?? 0;
+    document.getElementById('cnt-tot').textContent  = d.total   ?? 0;
+
+    const list = document.getElementById('alert-list');
+    const alerts = d.alerts || [];
+    if (!alerts.length) {
+      list.innerHTML = '<div class="no-items" style="color:var(--green)">✓ No active alerts</div>';
+      return;
+    }
+    list.innerHTML = alerts.slice(0, 12).map(a => {
+      const state = a.state || 'pending';
+      const name  = a.labels?.alertname || 'Unknown Alert';
+      return `<div class="alert-item ${state}">
+        <div class="al-dot ${state}"></div>
+        <span class="al-name">${name}</span>
+        <span class="al-state ${state}">${state.toUpperCase()}</span>
+      </div>`;
+    }).join('');
+  } catch {
+    document.getElementById('cnt-fire').textContent = '—';
+    document.getElementById('cnt-pend').textContent = '—';
+    document.getElementById('cnt-tot').textContent  = '—';
+    document.getElementById('alert-list').innerHTML =
+      '<div class="no-items">Backend unreachable</div>';
+  }
+}
+
+async function pollStatus() {
+  try {
+    const r = await fetch(API + '/api/status');
+    const d = await r.json();
+    const grid = document.getElementById('svc-list');
+    if (!d.prometheus_reachable) {
+      grid.innerHTML = '<div class="svc-row"><div class="svc-dot dn"></div><span class="svc-name">Prometheus unreachable</span></div>';
+      return;
+    }
+    const targets = d.targets || [];
+    if (!targets.length) {
+      grid.innerHTML = '<div class="svc-row"><div class="svc-dot unk"></div><span class="svc-name">No targets found</span></div>';
+      return;
+    }
+    grid.innerHTML = targets.map(t => `
+      <div class="svc-row">
+        <div class="svc-dot ${t.up ? 'up' : 'dn'}"></div>
+        <span class="svc-name">${t.job}</span>
+        <span class="svc-inst">${t.instance}</span>
+        <span class="svc-tag ${t.up ? 'up' : 'dn'}">${t.up ? 'UP' : 'DOWN'}</span>
+      </div>`).join('');
+  } catch {
+    document.getElementById('svc-list').innerHTML =
+      '<div class="svc-row"><div class="svc-dot unk"></div><span class="svc-name">Backend unreachable</span></div>';
+  }
+}
+
+async function pollAnomaly() {
+  try {
+    const r = await fetch(API + '/api/anomalies/score');
+    if (r.status === 401 || r.status === 503) {
+      // Auth required or DB off — show neutral state
+      document.getElementById('anm-level').textContent = 'AUTH REQUIRED';
+      document.getElementById('anm-level').className   = 'anm-level';
+      document.getElementById('anm-desc').textContent  =
+        'Anomaly endpoint needs a JWT token. Login via /auth/token.';
+      return;
+    }
+    const d = await r.json();
+    if (d.status === 'insufficient_data') {
+      document.getElementById('anm-level').textContent = 'COLLECTING DATA';
+      document.getElementById('anm-level').className   = 'anm-level';
+      document.getElementById('anm-desc').textContent  =
+        `Need at least 5 snapshots. Have ${d.sample_count || 0} so far.`;
+      return;
+    }
+    const score   = d.anomaly_score ?? d.score ?? 0;
+    const methods = d.methods || {};
+    setAnomaly(score, methods);
+  } catch {
+    document.getElementById('anm-level').textContent = 'UNAVAILABLE';
+    document.getElementById('anm-level').className   = 'anm-level';
+    document.getElementById('anm-desc').textContent  = 'ML engine not reachable.';
+  }
+}
+
+// ── BOOT ─────────────────────────────────────────────────
+connectWS();
+pollAlerts();
+pollStatus();
+pollAnomaly();
+
+setInterval(pollAlerts,  15_000);
+setInterval(pollStatus,  30_000);
+setInterval(pollAnomaly, 20_000);
+</script>
+</body>
+</html>

@@ -1,0 +1,22 @@
+# =============================================================
+# Grafana Dashboard Provisioning
+# grafana/provisioning/dashboards/default.yml
+#
+# Tells Grafana WHERE to find dashboard JSON files.
+# Any .json file placed in the dashboards/ folder will be
+# automatically imported and kept in sync.
+# =============================================================
+
+apiVersion: 1
+
+providers:
+  - name: "InfraWatch Dashboards"
+    orgId: 1
+    folder: "InfraWatch"          # Folder name shown in Grafana UI
+    folderUid: "infrawatch"
+    type: file
+    disableDeletion: false        # Allow deleting via UI
+    editable: true                # Allow editing via UI
+    updateIntervalSeconds: 30     # Re-scan for new dashboard files every 30s
+    options:
+      path: /var/lib/grafana/dashboards   # Where we mounted our JSON files

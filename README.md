@@ -8,15 +8,15 @@
 
 **Open-source observability platform — real-time metrics, logs, alerts, and ML anomaly detection in one unified dashboard.**
 
-![Vantage Dashboard](screenshot.png)
+![Vantage Dashboard](screenshot-overview.png)
 
----
+--- 
 
 ## Screenshots
 
 | Overview | Metrics |
 |----------|---------|
-| ![Overview](screenshot-overview.png) | ![Metrics](screenshot-metrics.png) |
+| ![Overview](screenshot.png) | ![Metrics](screenshot-metrics.png) |
 
 | Alerts | Anomalies |
 |--------|-----------|

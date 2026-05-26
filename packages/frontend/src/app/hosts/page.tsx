@@ -1,9 +1,10 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { AppShell } from "@/components/layout/AppShell";
-import { Topbar } from "@/components/layout/Topbar";
+import { StatCard } from "@/components/ui/StatCard";
+import { VEmpty } from "@/components/ui/Empty";
+import { VIcon } from "@/components/ui/Icons";
 import { nexus } from "@/lib/api/nexus";
-import { Server, ShieldAlert } from "lucide-react";
 
 interface Host {
   id?: string;
@@ -21,81 +22,28 @@ interface Host {
   os_info?: string;
   ssl_expiry_days?: number;
   ssl_expires_in_days?: number;
+  [key: string]: unknown;
 }
 
-function statusColor(status: string | undefined) {
-  switch (status?.toLowerCase()) {
-    case "online":
-    case "up":
-      return "ok";
-    case "maintenance":
-      return "warn";
-    case "offline":
-    case "down":
-      return "critical";
-    default:
-      return "muted";
-  }
-}
-
-function statusLabel(status: string | undefined) {
-  switch (status?.toLowerCase()) {
-    case "online":
-    case "up":
-      return "online";
-    case "maintenance":
-      return "maintenance";
-    case "offline":
-    case "down":
-      return "offline";
-    default:
-      return status ?? "unknown";
-  }
-}
-
-function ProgressBar({ value, color }: { value: number; color: "ok" | "warn" | "critical" | "brand" }) {
-  const clampedValue = Math.min(100, Math.max(0, value));
-  const colorClass =
-    color === "ok"
-      ? "bg-ok"
-      : color === "warn"
-      ? "bg-warn"
-      : color === "critical"
-      ? "bg-critical"
-      : "bg-brand";
+function statusDot(s?: string) {
+  const v = (s || "").toLowerCase();
+  const c =
+    v === "online" || v === "up"
+      ? "#10B981"
+      : v === "maintenance"
+      ? "#94A3B8"
+      : "#EF4444";
   return (
-    <div className="h-1.5 w-full bg-elevated rounded-full overflow-hidden">
-      <div
-        className={`h-full ${colorClass} rounded-full transition-all duration-500`}
-        style={{ width: `${clampedValue}%` }}
-      />
-    </div>
-  );
-}
-
-function cpuColor(pct: number): "ok" | "warn" | "critical" {
-  if (pct >= 90) return "critical";
-  if (pct >= 70) return "warn";
-  return "ok";
-}
-
-function ramColor(pct: number): "ok" | "warn" | "critical" {
-  if (pct >= 90) return "critical";
-  if (pct >= 75) return "warn";
-  return "ok";
-}
-
-function SkeletonCard() {
-  return (
-    <div className="bg-surface border border-border rounded-xl p-5 space-y-3 animate-pulse">
-      <div className="h-4 bg-elevated rounded w-2/3" />
-      <div className="h-3 bg-elevated rounded w-1/2" />
-      <div className="space-y-2 pt-1">
-        <div className="h-2 bg-elevated rounded w-full" />
-        <div className="h-2 bg-elevated rounded w-full" />
-      </div>
-      <div className="h-5 bg-elevated rounded w-16" />
-    </div>
+    <span
+      style={{
+        width: 7,
+        height: 7,
+        borderRadius: "50%",
+        background: c,
+        display: "inline-block",
+        flexShrink: 0,
+      }}
+    />
   );
 }
 
@@ -104,158 +52,306 @@ export default function HostsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  function fetchHosts() {
-    nexus
-      .hosts()
-      .then((data) => {
-        setHosts(data as Host[]);
-        setError(null);
-      })
-      .catch((err: unknown) => {
-        setError(err instanceof Error ? err.message : "Failed to load hosts");
-      })
-      .finally(() => setLoading(false));
-  }
-
-  useEffect(() => {
-    fetchHosts();
-    const iv = setInterval(fetchHosts, 15_000);
-    return () => clearInterval(iv);
+  const load = useCallback(async () => {
+    try {
+      const data = await nexus.hosts();
+      setHosts(Array.isArray(data) ? (data as Host[]) : []);
+      setError(null);
+    } catch (e) {
+      setError((e as Error).message);
+    }
+    setLoading(false);
   }, []);
 
+  useEffect(() => {
+    load();
+    const iv = setInterval(load, 15000);
+    return () => clearInterval(iv);
+  }, [load]);
+
+  const onlineCount = hosts.filter((h) =>
+    ["online", "up"].includes((h.status || "").toLowerCase())
+  ).length;
+
   return (
-    <AppShell>
-      <Topbar title="Hosts" />
-      <div className="p-6 space-y-6">
-        {/* Header row */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className="text-base font-semibold text-text">Registered Hosts</h2>
-            <p className="text-xs text-muted mt-0.5">Auto-refreshes every 15 seconds</p>
-          </div>
-          {!loading && !error && (
-            <span className="text-xs font-mono text-muted bg-elevated px-2.5 py-1 rounded-lg border border-border">
-              {hosts.length} host{hosts.length !== 1 ? "s" : ""}
-            </span>
-          )}
+    <AppShell title="Hosts">
+      <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
+        {/* Summary row */}
+        <div style={{ display: "flex", gap: 12 }}>
+          <StatCard
+            label="Total Hosts"
+            value={loading ? "—" : hosts.length}
+            icon="hosts"
+            color="brand"
+          />
+          <StatCard
+            label="Online"
+            value={loading ? "—" : onlineCount}
+            icon="check"
+            color="brand"
+          />
+          <StatCard
+            label="Offline / Maint"
+            value={loading ? "—" : hosts.length - onlineCount}
+            icon="xcircle"
+            color="brand"
+          />
         </div>
 
-        {/* Error state */}
-        {error && !loading && (
-          <div className="bg-critical/10 border border-critical/30 rounded-xl px-4 py-3 text-sm text-critical">
+        {error && (
+          <div
+            style={{
+              background: "var(--crit-dim)",
+              border: "1px solid var(--crit)",
+              borderRadius: 10,
+              padding: "12px 16px",
+              fontSize: 13,
+              color: "var(--crit)",
+            }}
+          >
             {error}
           </div>
         )}
 
-        {/* Skeleton loading */}
-        {loading && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <SkeletonCard key={i} />
-            ))}
+        {loading ? (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+              gap: 14,
+            }}
+          >
+            {Array(4)
+              .fill(0)
+              .map((_, i) => (
+                <div
+                  key={i}
+                  style={{
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 12,
+                    height: 180,
+                    animation: "pulse 1.5s infinite",
+                  }}
+                />
+              ))}
           </div>
-        )}
-
-        {/* Empty state */}
-        {!loading && !error && hosts.length === 0 && (
-          <div className="bg-surface border border-border rounded-xl p-12 flex flex-col items-center gap-3">
-            <Server size={36} className="text-muted opacity-40" />
-            <p className="text-sm text-muted">No hosts registered</p>
+        ) : hosts.length === 0 ? (
+          <div
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: 12,
+            }}
+          >
+            <VEmpty icon="hosts" message="No hosts registered" />
           </div>
-        )}
-
-        {/* Host grid */}
-        {!loading && hosts.length > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-            {hosts.map((host, idx) => {
-              const hostname = host.hostname ?? host.name ?? "Unknown";
-              const ip = host.ip ?? host.ip_address ?? "";
-              const cpu = host.cpu ?? host.cpu_usage_percent ?? 0;
-              const ram =
-                host.ram ??
-                host.ram_usage_percent ??
-                host.memory_usage_percent ??
-                0;
-              const status = host.status;
-              const os = host.os ?? host.os_info;
-              const sslDays =
-                host.ssl_expiry_days ?? host.ssl_expires_in_days;
-              const sc = statusColor(status);
-              const sl = statusLabel(status);
-
-              const statusBg =
-                sc === "ok"
-                  ? "bg-ok/10 text-ok"
-                  : sc === "warn"
-                  ? "bg-warn/10 text-warn"
-                  : sc === "critical"
-                  ? "bg-critical/10 text-critical"
-                  : "bg-elevated text-muted";
+        ) : (
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))",
+              gap: 14,
+            }}
+          >
+            {hosts.map((h, i) => {
+              const name = h.hostname || h.name || "Unknown";
+              const ip = h.ip || h.ip_address || "";
+              const cpu = Number(h.cpu || h.cpu_usage_percent || 0);
+              const ram = Number(
+                h.ram || h.ram_usage_percent || h.memory_usage_percent || 0
+              );
+              const os = h.os || h.os_info;
+              const ssl = h.ssl_expiry_days ?? h.ssl_expires_in_days;
 
               return (
                 <div
-                  key={host.id ?? idx}
-                  className="bg-surface border border-border rounded-xl p-5 flex flex-col gap-3 hover:border-brand/40 transition-colors"
+                  key={h.id || i}
+                  style={{
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 12,
+                    padding: "18px 20px",
+                    display: "flex",
+                    flexDirection: "column",
+                    gap: 14,
+                  }}
                 >
-                  {/* Hostname + status badge */}
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="font-semibold text-sm text-text leading-snug break-all">
-                      {hostname}
-                    </span>
+                  {/* Header */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    {statusDot(h.status)}
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 600,
+                          color: "var(--text)",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {name}
+                      </div>
+                      {ip && (
+                        <div
+                          style={{
+                            fontSize: 11,
+                            color: "var(--text-muted)",
+                            fontFamily: "JetBrains Mono, monospace",
+                            marginTop: 1,
+                          }}
+                        >
+                          {ip}
+                        </div>
+                      )}
+                    </div>
                     <span
-                      className={`shrink-0 text-xs px-2 py-0.5 rounded-full font-medium capitalize ${statusBg}`}
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        background: "var(--elevated)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 6,
+                        padding: "2px 8px",
+                      }}
                     >
-                      {sl}
+                      {h.status || "unknown"}
                     </span>
                   </div>
 
-                  {/* IP */}
-                  {ip && (
-                    <span className="font-mono text-xs text-muted -mt-1">
-                      {ip}
-                    </span>
-                  )}
-
                   {/* CPU bar */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-muted">CPU</span>
-                      <span className={`font-mono text-${cpuColor(cpu)}`}>
+                  <div>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        marginBottom: 5,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 11,
+                          color: "var(--text-muted)",
+                          letterSpacing: "0.05em",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        CPU
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontFamily: "JetBrains Mono, monospace",
+                          color: cpu > 85 ? "var(--crit)" : "var(--text)",
+                        }}
+                      >
                         {cpu.toFixed(1)}%
                       </span>
                     </div>
-                    <ProgressBar value={cpu} color={cpuColor(cpu)} />
+                    <div
+                      style={{
+                        height: 5,
+                        background: "var(--elevated)",
+                        borderRadius: 3,
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${Math.min(100, cpu)}%`,
+                          height: "100%",
+                          background: cpu > 85 ? "var(--crit)" : "var(--brand)",
+                          borderRadius: 3,
+                          transition: "width 0.3s",
+                        }}
+                      />
+                    </div>
                   </div>
 
                   {/* RAM bar */}
-                  <div className="space-y-1">
-                    <div className="flex items-center justify-between text-xs">
-                      <span className="text-muted">RAM</span>
-                      <span className={`font-mono text-${ramColor(ram)}`}>
+                  <div>
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        marginBottom: 5,
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontSize: 11,
+                          color: "var(--text-muted)",
+                          letterSpacing: "0.05em",
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        RAM
+                      </span>
+                      <span
+                        style={{
+                          fontSize: 12,
+                          fontFamily: "JetBrains Mono, monospace",
+                          color: ram > 90 ? "var(--crit)" : "var(--text)",
+                        }}
+                      >
                         {ram.toFixed(1)}%
                       </span>
                     </div>
-                    <ProgressBar value={ram} color={ramColor(ram)} />
+                    <div
+                      style={{
+                        height: 5,
+                        background: "var(--elevated)",
+                        borderRadius: 3,
+                        overflow: "hidden",
+                      }}
+                    >
+                      <div
+                        style={{
+                          width: `${Math.min(100, ram)}%`,
+                          height: "100%",
+                          background: ram > 90 ? "var(--crit)" : "var(--brand)",
+                          borderRadius: 3,
+                          transition: "width 0.3s",
+                        }}
+                      />
+                    </div>
                   </div>
 
-                  {/* OS info */}
+                  {/* OS footer */}
                   {os && (
-                    <p className="text-xs text-muted truncate" title={os}>
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "var(--text-muted)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                        borderTop: "1px solid var(--border)",
+                        paddingTop: 10,
+                      }}
+                    >
                       {os}
-                    </p>
+                    </div>
                   )}
 
-                  {/* SSL expiry warning */}
-                  {sslDays != null && sslDays < 30 && (
-                    <div className="flex items-center gap-1.5 bg-warn/10 border border-warn/20 rounded-lg px-2.5 py-1.5 text-xs text-warn">
-                      <ShieldAlert size={12} className="shrink-0" />
-                      <span>
-                        SSL expires in{" "}
-                        <span className="font-mono font-semibold">
-                          {sslDays}
-                        </span>{" "}
-                        day{sslDays !== 1 ? "s" : ""}
-                      </span>
+                  {/* SSL warning */}
+                  {ssl != null && ssl < 30 && (
+                    <div
+                      style={{
+                        background: "var(--elevated)",
+                        border: "1px solid var(--border)",
+                        borderRadius: 8,
+                        padding: "7px 10px",
+                        fontSize: 11,
+                        color: "var(--crit)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <VIcon name="shield" size={12} /> SSL expires in{" "}
+                      <strong>{ssl}d</strong>
                     </div>
                   )}
                 </div>

@@ -1,9 +1,9 @@
-import { getToken } from "../auth";
+import { getNexusToken } from "../auth";
 
 const BASE = process.env.NEXT_PUBLIC_API_NEXUS_URL ?? "http://localhost:3001";
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getToken();
+  const token = getNexusToken();
   const res = await fetch(`${BASE}/api${path}`, {
     ...init,
     headers: {

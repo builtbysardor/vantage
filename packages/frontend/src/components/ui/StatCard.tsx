@@ -1,32 +1,104 @@
-import { type LucideIcon } from "lucide-react";
+"use client";
+import { VIcon } from "./Icons";
+import { VSparkline } from "./Sparkline";
+import { ReactNode } from "react";
+
+type ColorKey = "brand" | "ok" | "warn" | "crit" | "accent" | "muted";
+
+const COLOR_MAP: Record<ColorKey, string> = {
+  brand: "var(--brand)",
+  ok: "var(--ok)",
+  warn: "var(--warn)",
+  crit: "var(--crit)",
+  accent: "#0EA5E9",
+  muted: "var(--text-muted)",
+};
+
+const DIM_MAP: Record<ColorKey, string> = {
+  brand: "var(--brand-dim)",
+  ok: "var(--ok-dim)",
+  warn: "var(--warn-dim)",
+  crit: "var(--crit-dim)",
+  accent: "rgba(14,165,233,0.12)",
+  muted: "rgba(100,116,139,0.12)",
+};
 
 interface StatCardProps {
   label: string;
-  value: string | number;
+  value: ReactNode;
   sub?: string;
-  icon?: LucideIcon;
-  color?: "brand" | "ok" | "warn" | "critical" | "accent";
+  icon?: string;
+  color?: ColorKey;
+  spark?: number[];
 }
 
-const colors = {
-  brand: "text-brand",
-  ok: "text-ok",
-  warn: "text-warn",
-  critical: "text-critical",
-  accent: "text-accent",
-};
+export function StatCard({ label, value, sub, icon, color = "brand", spark }: StatCardProps) {
+  const clr = COLOR_MAP[color] ?? COLOR_MAP.brand;
+  const dimClr = DIM_MAP[color] ?? DIM_MAP.brand;
 
-export function StatCard({ label, value, sub, icon: Icon, color = "brand" }: StatCardProps) {
   return (
-    <div className="bg-surface border border-border rounded-xl p-5 flex items-start justify-between gap-4">
-      <div>
-        <p className="text-xs text-muted uppercase tracking-wider">{label}</p>
-        <p className={`font-mono text-2xl font-bold mt-1 ${colors[color]}`}>{value}</p>
-        {sub && <p className="text-xs text-muted mt-1">{sub}</p>}
+    <div
+      style={{
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        borderRadius: 12,
+        padding: "16px 18px",
+        flex: 1,
+        minWidth: 140,
+        position: "relative",
+        overflow: "hidden",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+        <div>
+          <div
+            style={{
+              fontSize: 11,
+              color: "var(--text-muted)",
+              textTransform: "uppercase",
+              letterSpacing: "0.07em",
+              fontWeight: 600,
+            }}
+          >
+            {label}
+          </div>
+          <div
+            style={{
+              fontSize: 28,
+              fontWeight: 700,
+              color: clr,
+              fontFamily: "JetBrains Mono, monospace",
+              lineHeight: 1.1,
+              marginTop: 4,
+            }}
+          >
+            {value}
+          </div>
+          {sub && (
+            <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4 }}>{sub}</div>
+          )}
+        </div>
+        {icon && (
+          <div
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 9,
+              background: dimClr,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: clr,
+              flexShrink: 0,
+            }}
+          >
+            <VIcon name={icon} size={16} />
+          </div>
+        )}
       </div>
-      {Icon && (
-        <div className="w-9 h-9 rounded-lg bg-elevated border border-border flex items-center justify-center shrink-0">
-          <Icon size={16} className={colors[color]} />
+      {spark && (
+        <div style={{ marginTop: 10 }}>
+          <VSparkline data={spark} color={clr} />
         </div>
       )}
     </div>

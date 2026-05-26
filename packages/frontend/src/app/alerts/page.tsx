@@ -1,10 +1,11 @@
 "use client";
-import { useEffect, useState } from "react";
-import { formatDistanceToNow } from "date-fns";
-import { Bell, AlertTriangle, Info, CheckCircle, XCircle } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
 import { AppShell } from "@/components/layout/AppShell";
-import { Topbar } from "@/components/layout/Topbar";
 import { StatCard } from "@/components/ui/StatCard";
+import { VSection } from "@/components/ui/Section";
+import { VBadge } from "@/components/ui/Badge";
+import { VEmpty } from "@/components/ui/Empty";
+import { VIcon } from "@/components/ui/Icons";
 import { infrawatch } from "@/lib/api/infrawatch";
 import { nexus } from "@/lib/api/nexus";
 
@@ -17,237 +18,242 @@ interface NormalizedAlert {
   severity: AlertSeverity;
   status: AlertStatus;
   timestamp: Date;
-  source: "infrawatch" | "nexus";
-  labels?: Record<string, string>;
+  source: string;
 }
 
-function normalizeInfrawatchAlert(raw: unknown, idx: number): NormalizedAlert {
-  const a = raw as Record<string, unknown>;
-  const labels = (a.labels ?? {}) as Record<string, string>;
-  const severity = (labels.severity ?? a.severity ?? "info") as string;
-  const status = (a.status ?? a.state ?? "firing") as string;
-  const ts = a.fired_at ?? a.started_at ?? a.timestamp ?? a.created_at;
-
+function normalize(raw: unknown, source: string, idx: number): NormalizedAlert {
+  const a = (raw || {}) as Record<string, unknown>;
+  const lbl = (a.labels || {}) as Record<string, unknown>;
+  const sev = String(a.severity || lbl.severity || a.level || "info");
+  const stat = String(a.status || a.state || "firing");
+  const ts = a.fired_at || a.triggered_at || a.created_at || a.timestamp || new Date().toISOString();
   return {
-    id: `iw-${a.id ?? a.name ?? idx}`,
-    name: (a.name ?? a.alert_name ?? a.alertname ?? labels.alertname ?? "Unknown Alert") as string,
-    severity: (["critical", "warning", "info"].includes(severity) ? severity : "info") as AlertSeverity,
-    status: (["firing", "resolved", "pending"].includes(status) ? status : "firing") as AlertStatus,
-    timestamp: ts ? new Date(ts as string) : new Date(),
-    source: "infrawatch",
-    labels,
+    id: `${source}-${a.id || a._id || idx}`,
+    name: String(a.name || a.title || a.alert_name || lbl.alertname || "Unknown Alert"),
+    severity: (["critical", "warning", "info"].includes(sev) ? sev : "info") as AlertSeverity,
+    status: (["firing", "resolved", "pending"].includes(stat) ? stat : "firing") as AlertStatus,
+    timestamp: new Date(ts as string),
+    source,
   };
 }
 
-function normalizeNexusAlert(raw: unknown, idx: number): NormalizedAlert {
-  const a = raw as Record<string, unknown>;
-  const severity = (a.severity ?? a.level ?? "info") as string;
-  const status = (a.status ?? a.state ?? "firing") as string;
-  const ts = a.triggered_at ?? a.created_at ?? a.timestamp ?? a.fired_at;
+const SEV_ICON: Record<AlertSeverity, string> = {
+  critical: "xcircle",
+  warning: "warn",
+  info: "info",
+};
+const SEV_COLOR: Record<AlertSeverity, "crit" | "warn" | "brand"> = {
+  critical: "crit",
+  warning: "warn",
+  info: "brand",
+};
+const STAT_COLOR: Record<AlertStatus, "crit" | "ok" | "warn"> = {
+  firing: "crit",
+  resolved: "ok",
+  pending: "warn",
+};
 
-  return {
-    id: `nx-${a.id ?? a._id ?? idx}`,
-    name: (a.name ?? a.title ?? a.message ?? "Unknown Alert") as string,
-    severity: (["critical", "warning", "info"].includes(severity) ? severity : "info") as AlertSeverity,
-    status: (["firing", "resolved", "pending"].includes(status) ? status : "firing") as AlertStatus,
-    timestamp: ts ? new Date(ts as string) : new Date(),
-    source: "nexus",
-  };
+function timeAgo(ts: Date) {
+  try {
+    const s = Math.round((Date.now() - ts.getTime()) / 1000);
+    if (s < 60) return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    return `${Math.floor(s / 3600)}h ago`;
+  } catch {
+    return "—";
+  }
 }
-
-const severityConfig: Record<AlertSeverity, { label: string; classes: string; icon: typeof Bell }> = {
-  critical: {
-    label: "Critical",
-    classes: "bg-critical/10 text-critical border border-critical/20",
-    icon: XCircle,
-  },
-  warning: {
-    label: "Warning",
-    classes: "bg-warn/10 text-warn border border-warn/20",
-    icon: AlertTriangle,
-  },
-  info: {
-    label: "Info",
-    classes: "bg-brand/10 text-brand border border-brand/20",
-    icon: Info,
-  },
-};
-
-const statusConfig: Record<AlertStatus, { label: string; classes: string }> = {
-  firing: { label: "Firing", classes: "text-critical" },
-  resolved: { label: "Resolved", classes: "text-ok" },
-  pending: { label: "Pending", classes: "text-warn" },
-};
-
-type FilterMode = "all" | "firing" | "resolved";
 
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<NormalizedAlert[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<FilterMode>("all");
+  const [filter, setFilter] = useState("all");
 
-  async function fetchAlerts() {
-    const [iwResult, nxResult] = await Promise.allSettled([
-      infrawatch.alerts(),
-      nexus.alerts(),
-    ]);
-
+  const load = useCallback(async () => {
+    const [iwr, nxr] = await Promise.allSettled([infrawatch.alerts(), nexus.alerts()]);
     const merged: NormalizedAlert[] = [];
-
-    if (iwResult.status === "fulfilled") {
-      const payload = iwResult.value as { alerts?: unknown[]; total?: number; firing?: number };
-      const list = Array.isArray(payload) ? payload : (payload.alerts ?? []);
-      list.forEach((a, i) => merged.push(normalizeInfrawatchAlert(a, i)));
+    if (iwr.status === "fulfilled") {
+      const p = iwr.value as { alerts?: unknown[] } | unknown[];
+      const list = Array.isArray(p) ? p : ((p as { alerts?: unknown[] }).alerts || []);
+      (list as unknown[]).forEach((a, i) => merged.push(normalize(a, "infrawatch", i)));
     }
-
-    if (nxResult.status === "fulfilled") {
-      const list = Array.isArray(nxResult.value) ? nxResult.value : [];
-      list.forEach((a, i) => merged.push(normalizeNexusAlert(a, i)));
+    if (nxr.status === "fulfilled") {
+      const list = Array.isArray(nxr.value) ? nxr.value : [];
+      list.forEach((a, i) => merged.push(normalize(a, "nexus", i)));
     }
-
-    // Sort: firing first, then by recency
     merged.sort((a, b) => {
       if (a.status === "firing" && b.status !== "firing") return -1;
       if (b.status === "firing" && a.status !== "firing") return 1;
       return b.timestamp.getTime() - a.timestamp.getTime();
     });
-
     setAlerts(merged);
     setLoading(false);
-  }
+  }, []);
 
   useEffect(() => {
-    fetchAlerts();
-    const iv = setInterval(fetchAlerts, 10_000);
+    load();
+    const iv = setInterval(load, 10000);
     return () => clearInterval(iv);
-  }, []);
+  }, [load]);
 
   const total = alerts.length;
   const firing = alerts.filter((a) => a.status === "firing").length;
   const pending = alerts.filter((a) => a.status === "pending").length;
 
-  const filtered = alerts.filter((a) => {
+  const visible = alerts.filter((a) => {
     if (filter === "all") return true;
-    if (filter === "firing") return a.status === "firing";
-    if (filter === "resolved") return a.status === "resolved";
-    return true;
+    return a.status === filter;
   });
 
-  const filterButtons: { key: FilterMode; label: string }[] = [
-    { key: "all", label: "All" },
-    { key: "firing", label: "Firing" },
-    { key: "resolved", label: "Resolved" },
-  ];
-
   return (
-    <AppShell>
-      <Topbar title="Alerts" />
-      <div className="p-6 space-y-6">
-        {/* Header */}
-        <div>
-          <h2 className="text-base font-semibold text-text">Alert Center</h2>
-          <p className="text-xs text-muted mt-0.5">Aggregated from InfraWatch &amp; Nexus — refreshes every 10s</p>
-        </div>
+    <AppShell title="Alerts" firingAlerts={firing}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        <VSection
+          title="Alert Center"
+          sub="Aggregated from InfraWatch & Nexus — refreshes every 10s"
+        >
+          <div style={{ display: "flex", gap: 12 }}>
+            <StatCard
+              label="Total Alerts"
+              value={loading ? "—" : total}
+              icon="alerts"
+              color="brand"
+            />
+            <StatCard
+              label="Firing"
+              value={loading ? "—" : firing}
+              icon="xcircle"
+              color={firing > 0 ? "crit" : "ok"}
+            />
+            <StatCard
+              label="Pending"
+              value={loading ? "—" : pending}
+              icon="warn"
+              color={pending > 0 ? "warn" : "ok"}
+            />
+          </div>
+        </VSection>
 
-        {/* Stat cards */}
-        <div className="grid grid-cols-3 gap-4">
-          <StatCard
-            label="Total Alerts"
-            value={loading ? "—" : total}
-            icon={Bell}
-            color="brand"
-          />
-          <StatCard
-            label="Firing"
-            value={loading ? "—" : firing}
-            icon={XCircle}
-            color={firing > 0 ? "critical" : "ok"}
-          />
-          <StatCard
-            label="Pending"
-            value={loading ? "—" : pending}
-            icon={AlertTriangle}
-            color={pending > 0 ? "warn" : "ok"}
-          />
-        </div>
-
-        {/* Filter bar + list */}
-        <div className="bg-surface border border-border rounded-xl overflow-hidden">
-          {/* Filter buttons */}
-          <div className="flex items-center gap-1 px-4 py-3 border-b border-border">
-            {filterButtons.map(({ key, label }) => (
+        <div
+          style={{
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            borderRadius: 12,
+            overflow: "hidden",
+          }}
+        >
+          {/* Filter bar */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+              padding: "12px 16px",
+              borderBottom: "1px solid var(--border)",
+            }}
+          >
+            {["all", "firing", "resolved"].map((f) => (
               <button
-                key={key}
-                onClick={() => setFilter(key)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
-                  filter === key
-                    ? "bg-elevated text-brand border border-border"
-                    : "text-muted hover:text-text hover:bg-elevated/50"
-                }`}
+                key={f}
+                onClick={() => setFilter(f)}
+                style={{
+                  padding: "5px 14px",
+                  borderRadius: 7,
+                  fontSize: 12,
+                  cursor: "pointer",
+                  background: filter === f ? "var(--elevated)" : "transparent",
+                  border: `1px solid ${filter === f ? "var(--border)" : "transparent"}`,
+                  color: filter === f ? "var(--text)" : "var(--text-muted)",
+                  fontWeight: filter === f ? 600 : 400,
+                }}
               >
-                {label}
+                {f.charAt(0).toUpperCase() + f.slice(1)}
               </button>
             ))}
-            {!loading && (
-              <span className="ml-auto text-xs text-muted font-mono">
-                {filtered.length} result{filtered.length !== 1 ? "s" : ""}
-              </span>
-            )}
+            <span
+              style={{
+                marginLeft: "auto",
+                fontSize: 11,
+                color: "var(--text-muted)",
+                fontFamily: "JetBrains Mono, monospace",
+              }}
+            >
+              {visible.length} result{visible.length !== 1 ? "s" : ""}
+            </span>
           </div>
 
-          {/* Alert list */}
+          {/* List */}
           {loading ? (
-            <div className="px-4 py-12 text-center text-sm text-muted">Loading alerts…</div>
-          ) : filtered.length === 0 ? (
-            <div className="px-4 py-12 text-center">
-              <CheckCircle size={28} className="text-ok mx-auto mb-3" />
-              <p className="text-sm font-medium text-ok">No active alerts — all systems nominal</p>
-              <p className="text-xs text-muted mt-1">
-                {filter !== "all" ? `No ${filter} alerts at this time.` : "No alerts from any source."}
-              </p>
+            <div
+              style={{
+                padding: "40px",
+                textAlign: "center",
+                color: "var(--text-muted)",
+                fontSize: 13,
+              }}
+            >
+              Loading alerts…
             </div>
+          ) : visible.length === 0 ? (
+            <VEmpty
+              icon="check"
+              message="No active alerts — all systems nominal"
+              sub={filter !== "all" ? `No ${filter} alerts at this time` : ""}
+            />
           ) : (
-            <div className="divide-y divide-border">
-              {filtered.map((alert) => {
-                const sev = severityConfig[alert.severity];
-                const SevIcon = sev.icon;
-                const stat = statusConfig[alert.status];
-
-                return (
-                  <div key={alert.id} className="flex items-center gap-4 px-4 py-3 hover:bg-elevated/30 transition-colors">
-                    {/* Severity badge */}
-                    <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${sev.classes}`}>
-                      <SevIcon size={11} />
-                      {sev.label}
-                    </span>
-
-                    {/* Alert name */}
-                    <span className="flex-1 text-sm text-text font-medium truncate">{alert.name}</span>
-
-                    {/* Source badge */}
-                    <span className="text-xs text-muted px-2 py-0.5 bg-elevated rounded-full border border-border shrink-0">
-                      {alert.source}
-                    </span>
-
-                    {/* Status */}
-                    <span className={`text-xs font-medium shrink-0 ${stat.classes}`}>
-                      {stat.label}
-                    </span>
-
-                    {/* Time */}
-                    <span className="text-xs text-muted font-mono shrink-0 w-28 text-right">
-                      {(() => {
-                        try {
-                          return formatDistanceToNow(alert.timestamp, { addSuffix: true });
-                        } catch {
-                          return "—";
-                        }
-                      })()}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
+            visible.map((a) => (
+              <div
+                key={a.id}
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 12,
+                  padding: "11px 16px",
+                  borderBottom: "1px solid var(--border)",
+                  transition: "background 0.1s",
+                }}
+                onMouseEnter={(e) => {
+                  (e.currentTarget as HTMLElement).style.background = "var(--elevated)";
+                }}
+                onMouseLeave={(e) => {
+                  (e.currentTarget as HTMLElement).style.background = "transparent";
+                }}
+              >
+                <VBadge color={SEV_COLOR[a.severity] || "muted"}>
+                  <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <VIcon name={SEV_ICON[a.severity] || "info"} size={10} />
+                    {a.severity === "critical"
+                      ? "Critical"
+                      : a.severity === "warning"
+                      ? "Warning"
+                      : "Info"}
+                  </span>
+                </VBadge>
+                <span
+                  style={{
+                    flex: 1,
+                    fontSize: 13,
+                    color: "var(--text)",
+                    fontWeight: 500,
+                  }}
+                >
+                  {a.name}
+                </span>
+                <VBadge color="muted">{a.source}</VBadge>
+                <VBadge color={STAT_COLOR[a.status] || "muted"}>{a.status}</VBadge>
+                <span
+                  style={{
+                    fontSize: 11,
+                    color: "var(--text-muted)",
+                    fontFamily: "JetBrains Mono, monospace",
+                    width: 80,
+                    textAlign: "right",
+                  }}
+                >
+                  {timeAgo(a.timestamp)}
+                </span>
+              </div>
+            ))
           )}
         </div>
       </div>

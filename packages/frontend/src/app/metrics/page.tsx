@@ -1,254 +1,213 @@
 "use client";
-
-import { useEffect, useState } from "react";
-import { format } from "date-fns";
-import {
-  ResponsiveContainer,
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  Legend,
-} from "recharts";
-import { Cpu, MemoryStick } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
 import { AppShell } from "@/components/layout/AppShell";
-import { Topbar } from "@/components/layout/Topbar";
 import { StatCard } from "@/components/ui/StatCard";
+import { VSection } from "@/components/ui/Section";
+import { VEmpty } from "@/components/ui/Empty";
+import { VLineChart } from "@/components/ui/LineChart";
 import { infrawatch } from "@/lib/api/infrawatch";
-
-interface HistoryPoint {
-  timestamp: string;
-  cpu_usage_percent?: number;
-  ram_usage_percent?: number;
-  [key: string]: unknown;
-}
 
 interface AnalyticsSummary {
   avg_cpu?: number;
   avg_ram?: number;
   max_cpu?: number;
   max_ram?: number;
-  [key: string]: unknown;
+  cpu?: { avg_percent?: number; max_percent?: number };
+  ram?: { avg_percent?: number; max_percent?: number };
 }
 
-function SkeletonCard() {
-  return (
-    <div className="bg-surface border border-border rounded-xl p-5 space-y-3">
-      <div className="h-3 w-24 bg-elevated rounded animate-pulse" />
-      <div className="h-7 w-16 bg-elevated rounded animate-pulse" />
-    </div>
-  );
+interface HistoryPoint {
+  cpu: number;
+  ram: number;
+  _label: string;
+  [key: string]: number | string | undefined;
 }
 
 export default function MetricsPage() {
   const [history, setHistory] = useState<HistoryPoint[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsSummary | null>(null);
+  const [hours, setHours] = useState(24);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  async function fetchData() {
+  const load = useCallback(async () => {
+    setError(null);
     try {
-      const [hist, analy] = await Promise.all([
-        infrawatch.historyMetrics(24) as Promise<HistoryPoint[]>,
-        infrawatch.analytics(24) as Promise<AnalyticsSummary>,
+      const [h, a] = await Promise.all([
+        infrawatch.historyMetrics(hours),
+        infrawatch.analytics(hours),
       ]);
-      setHistory(hist ?? []);
-      setAnalytics(analy ?? null);
-      setError(null);
+      const snaps = Array.isArray(h) ? h : [];
+      setHistory(
+        (snaps as Record<string, unknown>[]).map((p) => ({
+          cpu: Number(p.cpu_usage_percent ?? 0),
+          ram: Number(p.ram_usage_percent ?? 0),
+          _label: p.timestamp
+            ? new Date(p.timestamp as string).toLocaleTimeString([], {
+                hour: "2-digit",
+                minute: "2-digit",
+              })
+            : "",
+        }))
+      );
+      setAnalytics(a as AnalyticsSummary);
     } catch (e) {
-      setError((e as Error).message ?? "Failed to load metrics");
+      setError((e as Error).message);
     } finally {
       setLoading(false);
     }
-  }
+  }, [hours]);
 
   useEffect(() => {
-    fetchData();
-    const iv = setInterval(fetchData, 5000);
+    setLoading(true);
+    load();
+    const iv = setInterval(load, 10000);
     return () => clearInterval(iv);
-  }, []);
+  }, [load]);
 
-  const avgCpu = analytics?.avg_cpu ?? null;
-  const avgRam = analytics?.avg_ram ?? null;
-  const maxCpu = analytics?.max_cpu ?? null;
-  const maxRam = analytics?.max_ram ?? null;
+  const ag = analytics || {};
+  const avgCpu = ag.avg_cpu ?? ag.cpu?.avg_percent ?? null;
+  const avgRam = ag.avg_ram ?? ag.ram?.avg_percent ?? null;
+  const maxCpu = ag.max_cpu ?? ag.cpu?.max_percent ?? null;
+  const maxRam = ag.max_ram ?? ag.ram?.max_percent ?? null;
 
-  const chartData = history.map((p) => ({
-    ...p,
-    _label: p.timestamp
-      ? (() => {
-          try {
-            return format(new Date(p.timestamp), "HH:mm");
-          } catch {
-            return p.timestamp;
-          }
-        })()
-      : "",
-  }));
+  const TimeBtn = ({ h, label }: { h: number; label: string }) => (
+    <button
+      onClick={() => setHours(h)}
+      style={{
+        padding: "5px 12px",
+        borderRadius: 7,
+        fontSize: 12,
+        cursor: "pointer",
+        background: hours === h ? "var(--brand-dim)" : "var(--elevated)",
+        border: `1px solid ${hours === h ? "var(--brand)" : "var(--border)"}`,
+        color: hours === h ? "var(--brand)" : "var(--text-sec)",
+        fontWeight: hours === h ? 600 : 400,
+      }}
+    >
+      {label}
+    </button>
+  );
 
   return (
-    <AppShell>
-      <Topbar title="Metrics — 24h History" />
-      <div className="p-6 space-y-6">
-        <div>
-          <h2 className="text-base font-semibold text-text">Analytics Summary</h2>
-          <p className="text-xs text-muted mt-0.5">Aggregated over the last 24 hours</p>
-        </div>
+    <AppShell title="Metrics">
+      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        <VSection
+          title="Analytics Summary"
+          sub={`Aggregated over the last ${hours} hours`}
+        >
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            <StatCard
+              label="Avg CPU"
+              value={loading ? "—" : avgCpu != null ? `${avgCpu.toFixed(1)}%` : "—"}
+              icon="cpu"
+              color={
+                avgCpu == null
+                  ? "brand"
+                  : avgCpu > 80
+                  ? "crit"
+                  : avgCpu > 60
+                  ? "warn"
+                  : "ok"
+              }
+              sub={`${hours}h average`}
+            />
+            <StatCard
+              label="Avg RAM"
+              value={loading ? "—" : avgRam != null ? `${avgRam.toFixed(1)}%` : "—"}
+              icon="ram"
+              color={
+                avgRam == null
+                  ? "brand"
+                  : avgRam > 85
+                  ? "crit"
+                  : avgRam > 70
+                  ? "warn"
+                  : "ok"
+              }
+              sub={`${hours}h average`}
+            />
+            <StatCard
+              label="Max CPU"
+              value={loading ? "—" : maxCpu != null ? `${maxCpu.toFixed(1)}%` : "—"}
+              icon="cpu"
+              color={
+                maxCpu == null
+                  ? "brand"
+                  : maxCpu > 90
+                  ? "crit"
+                  : maxCpu > 70
+                  ? "warn"
+                  : "ok"
+              }
+              sub={`${hours}h peak`}
+            />
+            <StatCard
+              label="Max RAM"
+              value={loading ? "—" : maxRam != null ? `${maxRam.toFixed(1)}%` : "—"}
+              icon="ram"
+              color={
+                maxRam == null
+                  ? "brand"
+                  : maxRam > 90
+                  ? "crit"
+                  : maxRam > 75
+                  ? "warn"
+                  : "ok"
+              }
+              sub={`${hours}h peak`}
+            />
+          </div>
+        </VSection>
 
-        {/* Stat Cards */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-          {loading ? (
-            <>
-              <SkeletonCard />
-              <SkeletonCard />
-              <SkeletonCard />
-              <SkeletonCard />
-            </>
-          ) : (
-            <>
-              <StatCard
-                label="Avg CPU"
-                value={avgCpu !== null ? `${avgCpu.toFixed(1)}%` : "—"}
-                icon={Cpu}
-                color={
-                  avgCpu === null
-                    ? "brand"
-                    : avgCpu > 80
-                    ? "critical"
-                    : avgCpu > 60
-                    ? "warn"
-                    : "ok"
-                }
-                sub="24h average"
-              />
-              <StatCard
-                label="Avg RAM"
-                value={avgRam !== null ? `${avgRam.toFixed(1)}%` : "—"}
-                icon={MemoryStick}
-                color={
-                  avgRam === null
-                    ? "brand"
-                    : avgRam > 85
-                    ? "critical"
-                    : avgRam > 70
-                    ? "warn"
-                    : "ok"
-                }
-                sub="24h average"
-              />
-              <StatCard
-                label="Max CPU"
-                value={maxCpu !== null ? `${maxCpu.toFixed(1)}%` : "—"}
-                icon={Cpu}
-                color={
-                  maxCpu === null
-                    ? "brand"
-                    : maxCpu > 90
-                    ? "critical"
-                    : maxCpu > 70
-                    ? "warn"
-                    : "ok"
-                }
-                sub="24h peak"
-              />
-              <StatCard
-                label="Max RAM"
-                value={maxRam !== null ? `${maxRam.toFixed(1)}%` : "—"}
-                icon={MemoryStick}
-                color={
-                  maxRam === null
-                    ? "brand"
-                    : maxRam > 90
-                    ? "critical"
-                    : maxRam > 75
-                    ? "warn"
-                    : "ok"
-                }
-                sub="24h peak"
-              />
-            </>
-          )}
-        </div>
-
-        {/* Chart */}
-        <div className="bg-surface border border-border rounded-xl p-5">
-          <p className="text-xs font-semibold text-muted uppercase tracking-wider mb-4">
-            CPU &amp; RAM Over Time
-          </p>
-
-          {loading ? (
-            <div className="h-[280px] bg-elevated rounded-lg animate-pulse" />
-          ) : error ? (
-            <div className="h-[280px] flex items-center justify-center">
-              <p className="text-sm text-critical">{error}</p>
+        <VSection
+          title="CPU & RAM Over Time"
+          sub="Historical performance data"
+          action={
+            <div style={{ display: "flex", gap: 6 }}>
+              <TimeBtn h={1} label="1h" />
+              <TimeBtn h={6} label="6h" />
+              <TimeBtn h={24} label="24h" />
             </div>
-          ) : chartData.length === 0 ? (
-            <div className="h-[280px] flex items-center justify-center">
-              <p className="text-sm text-muted">No historical data yet</p>
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={280}>
-              <LineChart
-                data={chartData}
-                margin={{ top: 4, right: 16, left: 0, bottom: 4 }}
-              >
-                <CartesianGrid stroke="#1E2D47" strokeDasharray="3 3" />
-                <XAxis
-                  dataKey="_label"
-                  tick={{ fontSize: 11, fill: "#64748B" }}
-                  axisLine={{ stroke: "#1E2D47" }}
-                  tickLine={false}
-                />
-                <YAxis
-                  domain={[0, 100]}
-                  tickFormatter={(v) => `${v}%`}
-                  tick={{ fontSize: 11, fill: "#64748B" }}
-                  axisLine={{ stroke: "#1E2D47" }}
-                  tickLine={false}
-                  width={44}
-                />
-                <Tooltip
-                  contentStyle={{
-                    background: "#0F1629",
-                    border: "1px solid #1E2D47",
-                    borderRadius: "8px",
-                    fontSize: "12px",
-                    color: "#E2E8F0",
-                  }}
-                  formatter={(value: unknown, name: unknown) => [
-                    `${(value as number).toFixed(1)}%`,
-                    name === "cpu_usage_percent" ? "CPU" : "RAM",
-                  ]}
-                  labelFormatter={(label) => `Time: ${label}`}
-                />
-                <Legend
-                  formatter={(value) =>
-                    value === "cpu_usage_percent" ? "CPU" : "RAM"
-                  }
-                  wrapperStyle={{ fontSize: "12px", color: "#64748B" }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="cpu_usage_percent"
-                  stroke="#06B6D4"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="ram_usage_percent"
-                  stroke="#0EA5E9"
-                  strokeWidth={2}
-                  dot={false}
-                  activeDot={{ r: 4 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-        </div>
+          }
+        >
+          <div
+            style={{
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              borderRadius: 12,
+              padding: "18px 20px",
+            }}
+          >
+            {loading ? (
+              <div
+                style={{
+                  height: 220,
+                  background: "var(--elevated)",
+                  borderRadius: 8,
+                  animation: "pulse 1.5s infinite",
+                }}
+              />
+            ) : error ? (
+              <VEmpty icon="warn" message="Failed to load metrics" sub={error} />
+            ) : history.length === 0 ? (
+              <VEmpty
+                icon="metrics"
+                message="No historical data available"
+                sub="Data will appear after collection starts"
+              />
+            ) : (
+              <VLineChart
+                data={history}
+                height={240}
+                series={[
+                  { key: "cpu", color: "#06B6D4", label: "CPU %" },
+                  { key: "ram", color: "#0EA5E9", label: "RAM %" },
+                ]}
+              />
+            )}
+          </div>
+        </VSection>
       </div>
     </AppShell>
   );

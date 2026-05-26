@@ -1,92 +1,58 @@
 "use client";
-import { useEffect, useState } from "react";
-import { formatDistanceToNow } from "date-fns";
-import { Zap, CheckCircle, AlertCircle, BarChart2, FlaskConical } from "lucide-react";
+import { useState, useCallback, useEffect } from "react";
 import { AppShell } from "@/components/layout/AppShell";
-import { Topbar } from "@/components/layout/Topbar";
 import { StatCard } from "@/components/ui/StatCard";
+import { VSection } from "@/components/ui/Section";
+import { VBadge } from "@/components/ui/Badge";
+import { VEmpty } from "@/components/ui/Empty";
+import { VIcon } from "@/components/ui/Icons";
 import { infrawatch } from "@/lib/api/infrawatch";
-
-type DetectionMethod = "zscore" | "iqr" | "isolation_forest" | string;
 
 interface AnomalyEvent {
   id: string;
   metric: string;
-  method: DetectionMethod;
+  method: string;
   score: number;
   timestamp: Date;
   value?: number;
 }
 
 interface AnomalySummary {
-  total: number;
-  mostAffectedMetric: string;
-  methods: string[];
+  total?: number;
+  count?: number;
+  most_affected_metric?: string;
+  top_metric?: string;
+  detection_methods?: string[];
+  [key: string]: unknown;
 }
 
-function normalizeAnomaly(raw: unknown, idx: number): AnomalyEvent {
-  const a = raw as Record<string, unknown>;
-  const ts = a.timestamp ?? a.detected_at ?? a.created_at ?? a.time;
-  return {
-    id: `an-${a.id ?? idx}`,
-    metric: (a.metric ?? a.metric_name ?? a.name ?? "unknown") as string,
-    method: (a.method ?? a.detection_method ?? a.algorithm ?? "zscore") as string,
-    score: parseFloat(String(a.score ?? a.anomaly_score ?? a.z_score ?? 0)),
-    timestamp: ts ? new Date(ts as string) : new Date(),
-    value: a.value != null ? parseFloat(String(a.value)) : undefined,
+function methodColor(m: string): "brand" | "accent" | "warn" | "muted" {
+  const map: Record<string, "brand" | "accent" | "warn" | "muted"> = {
+    zscore: "brand",
+    iqr: "accent",
+    isolation_forest: "warn",
   };
+  return map[(m || "").toLowerCase()] || "muted";
 }
 
-function normalizeSummary(raw: unknown, anomalies: AnomalyEvent[]): AnomalySummary {
-  const s = raw as Record<string, unknown>;
+function methodLabel(m: string) {
+  const map: Record<string, string> = {
+    zscore: "Z-Score",
+    iqr: "IQR",
+    isolation_forest: "Isolation Forest",
+  };
+  return map[(m || "").toLowerCase()] || m;
+}
 
-  // Count per-metric occurrences from raw anomaly list for fallback
-  const metricCounts: Record<string, number> = {};
-  for (const a of anomalies) {
-    metricCounts[a.metric] = (metricCounts[a.metric] ?? 0) + 1;
+function timeAgo(ts: Date) {
+  try {
+    const s = Math.round((Date.now() - ts.getTime()) / 1000);
+    if (s < 60) return `${s}s ago`;
+    if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+    return `${Math.floor(s / 3600)}h ago`;
+  } catch {
+    return "—";
   }
-  const topMetric =
-    Object.entries(metricCounts).sort((a, b) => b[1] - a[1])[0]?.[0] ?? "—";
-
-  const methodsFromList = [...new Set(anomalies.map((a) => a.method))];
-
-  return {
-    total: (s.total ?? s.count ?? s.total_anomalies ?? anomalies.length) as number,
-    mostAffectedMetric:
-      (s.most_affected_metric ?? s.top_metric ?? s.most_common_metric ?? topMetric) as string,
-    methods:
-      Array.isArray(s.detection_methods)
-        ? (s.detection_methods as string[])
-        : Array.isArray(s.methods)
-        ? (s.methods as string[])
-        : methodsFromList.length > 0
-        ? methodsFromList
-        : ["—"],
-  };
-}
-
-const methodConfig: Record<string, { label: string; classes: string }> = {
-  zscore: {
-    label: "Z-Score",
-    classes: "bg-brand/10 text-brand border border-brand/20",
-  },
-  iqr: {
-    label: "IQR",
-    classes: "bg-accent/10 text-accent border border-accent/20",
-  },
-  isolation_forest: {
-    label: "Isolation Forest",
-    classes: "bg-warn/10 text-warn border border-warn/20",
-  },
-};
-
-function getMethodConfig(method: string) {
-  return (
-    methodConfig[method.toLowerCase()] ?? {
-      label: method,
-      classes: "bg-muted/10 text-muted border border-border",
-    }
-  );
 }
 
 export default function AnomaliesPage() {
@@ -95,158 +61,250 @@ export default function AnomaliesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    async function fetchData() {
-      setError(null);
-      try {
-        const [anomalyResult, summaryResult] = await Promise.allSettled([
-          infrawatch.anomalies(24),
-          infrawatch.anomalySummary(24),
-        ]);
-
-        let events: AnomalyEvent[] = [];
-
-        if (anomalyResult.status === "fulfilled") {
-          const list = Array.isArray(anomalyResult.value) ? anomalyResult.value : [];
-          events = list.map((a, i) => normalizeAnomaly(a, i));
-          // Sort most recent first
-          events.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
-          setAnomalies(events);
-        } else {
-          // Check if this is a DB_ENABLED / feature-flag style error
-          const msg = (anomalyResult.reason as Error)?.message ?? "";
-          if (msg.includes("501") || msg.includes("503") || msg.includes("not enabled") || msg.includes("disabled")) {
-            setError("Anomaly detection is not enabled on this InfraWatch instance. Set DB_ENABLED=true to activate.");
-          } else if (msg.includes("404")) {
-            setError("Anomaly detection endpoint not found. Ensure InfraWatch v2+ is running.");
-          } else {
-            setError(`Failed to load anomaly data: ${msg}`);
+  const load = useCallback(async () => {
+    setError(null);
+    try {
+      const [ar, sr] = await Promise.allSettled([
+        infrawatch.anomalies(24),
+        infrawatch.anomalySummary(24),
+      ]);
+      if (ar.status === "fulfilled") {
+        const events: AnomalyEvent[] = (Array.isArray(ar.value) ? ar.value : []).map(
+          (a: unknown, i: number) => {
+            const obj = (a || {}) as Record<string, unknown>;
+            return {
+              id: `an-${obj.id ?? i}`,
+              metric: String(obj.metric || obj.metric_name || "unknown"),
+              method: String(obj.method || obj.detection_method || "zscore"),
+              score: parseFloat(String(obj.score ?? obj.anomaly_score ?? 0)),
+              timestamp: new Date(String(obj.timestamp || obj.detected_at || Date.now())),
+              value: obj.value != null ? parseFloat(String(obj.value)) : undefined,
+            };
           }
-          setLoading(false);
-          return;
-        }
-
-        if (summaryResult.status === "fulfilled") {
-          setSummary(normalizeSummary(summaryResult.value, events));
+        );
+        events.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+        setAnomalies(events);
+      } else {
+        const msg = (ar.reason as Error)?.message || "";
+        if (msg.includes("501") || msg.includes("503") || msg.includes("not enabled")) {
+          setError("Anomaly detection not enabled. Set DB_ENABLED=true in InfraWatch config.");
         } else {
-          // Build summary from anomaly list alone
-          setSummary(normalizeSummary({}, events));
+          setError(`Failed to load anomaly data: ${msg}`);
         }
-      } catch (err) {
-        setError(`Unexpected error: ${(err as Error).message}`);
-      } finally {
-        setLoading(false);
       }
+      if (sr.status === "fulfilled") {
+        setSummary(sr.value as AnomalySummary);
+      }
+    } catch (e) {
+      setError((e as Error).message);
     }
-
-    fetchData();
+    setLoading(false);
   }, []);
 
-  const summaryData = summary ?? { total: 0, mostAffectedMetric: "—", methods: [] };
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const total = summary?.total ?? summary?.count ?? anomalies.length;
+  const topMet =
+    summary?.most_affected_metric ??
+    summary?.top_metric ??
+    (anomalies[0]?.metric || "—");
+  const methods = (summary?.detection_methods as string[]) ?? [
+    ...new Set(anomalies.map((a) => a.method)),
+  ];
 
   return (
-    <AppShell>
-      <Topbar title="Anomalies" />
-      <div className="p-6 space-y-6">
-        {/* Header */}
-        <div>
-          <h2 className="text-base font-semibold text-text">Anomaly Detection</h2>
-          <p className="text-xs text-muted mt-0.5">Last 24 hours — powered by InfraWatch ML engine</p>
-        </div>
-
-        {/* Error state */}
-        {error ? (
-          <div className="bg-surface border border-border rounded-xl p-6 flex items-start gap-4">
-            <AlertCircle size={20} className="text-warn shrink-0 mt-0.5" />
-            <div>
-              <p className="text-sm font-medium text-warn">Anomaly detection unavailable</p>
-              <p className="text-xs text-muted mt-1">{error}</p>
+    <AppShell title="Anomalies">
+      <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
+        <VSection
+          title="Anomaly Detection"
+          sub="Last 24 hours — powered by InfraWatch ML engine"
+        >
+          {error ? (
+            <div
+              style={{
+                background: "var(--warn-dim)",
+                border: "1px solid var(--warn)",
+                borderRadius: 12,
+                padding: "18px 20px",
+                display: "flex",
+                gap: 14,
+                alignItems: "flex-start",
+              }}
+            >
+              <VIcon
+                name="warn"
+                size={20}
+                style={{ color: "var(--warn)", flexShrink: 0 }}
+              />
+              <div>
+                <p
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 600,
+                    color: "var(--warn)",
+                    margin: 0,
+                  }}
+                >
+                  Anomaly detection unavailable
+                </p>
+                <p
+                  style={{
+                    fontSize: 12,
+                    color: "var(--text-muted)",
+                    marginTop: 4,
+                    marginBottom: 0,
+                  }}
+                >
+                  {error}
+                </p>
+              </div>
             </div>
-          </div>
-        ) : (
-          <>
-            {/* Summary cards */}
-            <div className="grid grid-cols-3 gap-4">
-              <StatCard
-                label="Anomalies Detected"
-                value={loading ? "—" : summaryData.total}
-                icon={Zap}
-                color={summaryData.total > 0 ? "warn" : "ok"}
-              />
-              <StatCard
-                label="Most Affected Metric"
-                value={loading ? "—" : summaryData.mostAffectedMetric}
-                icon={BarChart2}
-                color="brand"
-              />
-              <StatCard
-                label="Detection Methods"
-                value={loading ? "—" : summaryData.methods.length > 0 ? summaryData.methods.length : "—"}
-                sub={loading ? undefined : summaryData.methods.slice(0, 2).join(", ") || undefined}
-                icon={FlaskConical}
-                color="accent"
-              />
-            </div>
-
-            {/* Anomaly list */}
-            <div className="bg-surface border border-border rounded-xl overflow-hidden">
-              <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-                <p className="text-xs font-semibold text-muted uppercase tracking-wider">Anomaly Events</p>
-                {!loading && (
-                  <span className="text-xs text-muted font-mono">
-                    {anomalies.length} event{anomalies.length !== 1 ? "s" : ""}
-                  </span>
-                )}
+          ) : (
+            <>
+              <div style={{ display: "flex", gap: 12, marginBottom: 24 }}>
+                <StatCard
+                  label="Anomalies Detected"
+                  value={loading ? "—" : total}
+                  icon="anomalies"
+                  color={total > 0 ? "warn" : "ok"}
+                />
+                <StatCard
+                  label="Most Affected Metric"
+                  value={loading ? "—" : topMet}
+                  icon="barchart"
+                  color="brand"
+                />
+                <StatCard
+                  label="Detection Methods"
+                  value={loading ? "—" : methods.length || "—"}
+                  icon="flask"
+                  color="accent"
+                  sub={methods.slice(0, 2).join(", ") || undefined}
+                />
               </div>
 
-              {loading ? (
-                <div className="px-4 py-12 text-center text-sm text-muted">Loading anomaly data…</div>
-              ) : anomalies.length === 0 ? (
-                <div className="px-4 py-12 text-center">
-                  <CheckCircle size={28} className="text-ok mx-auto mb-3" />
-                  <p className="text-sm font-medium text-ok">No anomalies detected in the last 24 hours</p>
-                  <p className="text-xs text-muted mt-1">All metrics are within expected ranges.</p>
+              <div
+                style={{
+                  background: "var(--surface)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 12,
+                  overflow: "hidden",
+                }}
+              >
+                <div
+                  style={{
+                    padding: "12px 16px",
+                    borderBottom: "1px solid var(--border)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <span
+                    style={{
+                      fontSize: 11,
+                      fontWeight: 600,
+                      color: "var(--text-muted)",
+                      textTransform: "uppercase",
+                      letterSpacing: "0.07em",
+                    }}
+                  >
+                    Anomaly Events
+                  </span>
+                  {!loading && (
+                    <VBadge color="muted">
+                      {anomalies.length} event{anomalies.length !== 1 ? "s" : ""}
+                    </VBadge>
+                  )}
                 </div>
-              ) : (
-                <div className="divide-y divide-border">
-                  {anomalies.map((anomaly) => {
-                    const methodCfg = getMethodConfig(anomaly.method);
-                    return (
-                      <div key={anomaly.id} className="flex items-center gap-4 px-4 py-3 hover:bg-elevated/30 transition-colors">
-                        {/* Metric name */}
-                        <span className="font-mono text-sm text-text flex-1 truncate">{anomaly.metric}</span>
 
-                        {/* Detection method badge */}
-                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${methodCfg.classes}`}>
-                          {methodCfg.label}
+                {loading ? (
+                  <div
+                    style={{
+                      padding: "40px",
+                      textAlign: "center",
+                      color: "var(--text-muted)",
+                      fontSize: 13,
+                    }}
+                  >
+                    Loading anomaly data…
+                  </div>
+                ) : anomalies.length === 0 ? (
+                  <VEmpty
+                    icon="check"
+                    message="No anomalies detected in the last 24 hours"
+                    sub="All metrics are within expected ranges"
+                  />
+                ) : (
+                  anomalies.map((a) => (
+                    <div
+                      key={a.id}
+                      style={{
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 12,
+                        padding: "11px 16px",
+                        borderBottom: "1px solid var(--border)",
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.currentTarget as HTMLElement).style.background =
+                          "var(--elevated)";
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.currentTarget as HTMLElement).style.background = "transparent";
+                      }}
+                    >
+                      <span
+                        style={{
+                          fontFamily: "JetBrains Mono, monospace",
+                          fontSize: 13,
+                          color: "var(--text)",
+                          flex: 1,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        {a.metric}
+                      </span>
+                      <VBadge color={methodColor(a.method)}>
+                        {methodLabel(a.method)}
+                      </VBadge>
+                      <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                          score
                         </span>
-
-                        {/* Score */}
-                        <div className="flex items-center gap-1 shrink-0">
-                          <span className="text-xs text-muted">score</span>
-                          <span className="font-mono text-sm text-warn font-semibold">
-                            {isNaN(anomaly.score) ? "—" : anomaly.score.toFixed(2)}
-                          </span>
-                        </div>
-
-                        {/* Timestamp */}
-                        <span className="text-xs text-muted font-mono shrink-0 w-28 text-right">
-                          {(() => {
-                            try {
-                              return formatDistanceToNow(anomaly.timestamp, { addSuffix: true });
-                            } catch {
-                              return "—";
-                            }
-                          })()}
+                        <span
+                          style={{
+                            fontFamily: "JetBrains Mono, monospace",
+                            fontSize: 13,
+                            color: "var(--warn)",
+                            fontWeight: 700,
+                          }}
+                        >
+                          {isNaN(a.score) ? "—" : a.score.toFixed(3)}
                         </span>
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </>
-        )}
+                      <span
+                        style={{
+                          fontSize: 11,
+                          color: "var(--text-muted)",
+                          fontFamily: "JetBrains Mono, monospace",
+                          width: 72,
+                          textAlign: "right",
+                        }}
+                      >
+                        {timeAgo(a.timestamp)}
+                      </span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </>
+          )}
+        </VSection>
       </div>
     </AppShell>
   );

@@ -274,6 +274,7 @@ services:
       - DATABASE_URL=postgresql://${POSTGRES_USER:-infrawatch}:${POSTGRES_PASSWORD:-infrawatch}@postgres:5432/${POSTGRES_DB:-infrawatch}
       - REDIS_URL=redis://redis:6379/0
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:-infrawatch-dev-secret-change-in-prod}
+      - JWT_EXPIRE_MINUTES=${JWT_EXPIRE_MINUTES:-480}
       - ADMIN_PASSWORD=${ADMIN_PASSWORD:-infrawatch}
       - VIEWER_PASSWORD=${VIEWER_PASSWORD:-viewer123}
       - DB_ENABLED=true

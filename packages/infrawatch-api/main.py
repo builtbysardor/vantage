@@ -367,11 +367,11 @@ async def get_audit_logs(
     )
     return [
         {
-            "id": l.id,
-            "timestamp": l.timestamp.isoformat(),
-            "username": l.username,
-            "method": l.method,
-            "path": l.path,
+            "id": log.id,
+            "timestamp": log.timestamp.isoformat(),
+            "username": log.username,
+            "method": log.method,
+            "path": log.path,
             "status_code": log.status_code,
             "ip_address": log.ip_address,
             "duration_ms": log.duration_ms,

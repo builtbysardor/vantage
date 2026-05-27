@@ -372,11 +372,11 @@ async def get_audit_logs(
             "username": l.username,
             "method": l.method,
             "path": l.path,
-            "status_code": l.status_code,
-            "ip_address": l.ip_address,
-            "duration_ms": l.duration_ms,
+            "status_code": log.status_code,
+            "ip_address": log.ip_address,
+            "duration_ms": log.duration_ms,
         }
-        for l in logs
+        for log in logs
     ]
 
 

@@ -7,9 +7,6 @@ on:
     branches: [main, develop]
 
 jobs:
-  # ─────────────────────────────────────────────
-  # 1. Frontend — type-check, lint, build
-  # ─────────────────────────────────────────────
   frontend-ci:
     name: Frontend CI
     runs-on: ubuntu-latest
@@ -20,8 +17,6 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - name: Setup Node.js 20
         uses: actions/setup-node@v4
@@ -47,9 +42,6 @@ jobs:
       - name: Build
         run: pnpm --filter frontend build
 
-  # ─────────────────────────────────────────────
-  # 2. Nexus API — test (if script exists)
-  # ─────────────────────────────────────────────
   nexus-test:
     name: Nexus API Test
     runs-on: ubuntu-latest
@@ -76,9 +68,6 @@ jobs:
             echo "No test script found — skipping"
           fi
 
-  # ─────────────────────────────────────────────
-  # 3. InfraWatch — ruff lint
-  # ─────────────────────────────────────────────
   infrawatch-lint:
     name: InfraWatch Lint
     runs-on: ubuntu-latest

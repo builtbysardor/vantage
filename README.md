@@ -8,7 +8,7 @@
 
 **Open-source observability platform — real-time metrics, logs, alerts, and ML anomaly detection in one unified dashboard.**
 
-![Vantage Dashboard](screenshot-overview.png)
+![Vantage Dashboard](docs/screenshots/overview.png)
 
 --- 
 
@@ -16,19 +16,19 @@
 
 | Overview | Metrics |
 |----------|---------|
-| ![Overview](screenshot.png) | ![Metrics](screenshot-metrics.png) |
+| ![Overview](docs/screenshots/overview.png) | ![Metrics](docs/screenshots/metrics.png) |
 
 | Alerts | Anomalies |
 |--------|-----------|
-| ![Alerts](screenshot-alerts.png) | ![Anomalies](screenshot-anomalies.png) |
+| ![Alerts](docs/screenshots/alerts.png) | ![Anomalies](docs/screenshots/anomalies.png) |
 
 | Logs | Services |
 |------|----------|
-| ![Logs](screenshot-logs.png) | ![Services](screenshot-services.png) |
+| ![Logs](docs/screenshots/logs.png) | ![Services](docs/screenshots/services.png) |
 
 | Hosts | Containers |
 |-------|------------|
-| ![Hosts](screenshot-hosts.png) | ![Containers](screenshot-containers.png) |
+| ![Hosts](docs/screenshots/hosts.png) | ![Containers](docs/screenshots/containers.png) |
 
 ---
 
@@ -91,7 +91,7 @@
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/vantage-oss/vantage.git
+git clone https://github.com/builtbysardor/vantage.git
 cd vantage
 
 # 2. Copy and configure environment variables
@@ -154,4 +154,4 @@ To report a vulnerability, please see [SECURITY.md](SECURITY.md).
 
 ## License
 
-[MIT](LICENSE) &copy; 2026 Vantage Contributors
+[MIT](LICENSE) © 2026 Vantage Contributors

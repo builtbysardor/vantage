@@ -1,6 +1,6 @@
 # Vantage
 
-[![CI](https://github.com/vantage-oss/vantage/actions/workflows/ci.yml/badge.svg)](https://github.com/vantage-oss/vantage/actions/workflows/ci.yml)
+[![CI](https://github.com/builtbysardor/vantage/actions/workflows/ci.yml/badge.svg)](https://github.com/vantage-oss/vantage/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Next.js](https://img.shields.io/badge/Next.js-15-black?logo=next.js)](https://nextjs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
